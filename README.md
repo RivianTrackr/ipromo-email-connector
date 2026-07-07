@@ -71,12 +71,27 @@ Note: `createStytchUIClient` is imported from `@stytch/react/ui` (not `@stytch/v
 - **Connected Apps → Authorization URL:** `https://connector.ipromo.com/authorize` (already set).
 
 ## Deploy (Linode)
-- Node 20+. Build both: root `npm run build` **and** `cd web && npm run build`.
-- Run `dist/server.js` under **PM2** (`pm2 start dist/server.js --name email-connector`,
-  then `pm2 save` + `pm2 startup`). The server serves `web/dist` for /authorize, /login,
-  /authenticate, so run it from the repo root.
-- Front with **Caddy** (auto HTTPS) reverse-proxying `:443 → 127.0.0.1:8080`.
-- Point `connector.ipromo.com` (A record, Cloudflare DNS-only) at the box.
+The box runs at `/home/deploy/app` as the `deploy` user, under **PM2** (process
+`email-connector` → `dist/server.js` on `:8080`), fronted by **Caddy** (auto HTTPS,
+`:443 → 127.0.0.1:8080`). The app dir is a git checkout tracking `origin/main`, pulling
+via a read-only GitHub deploy key.
+
+**Deploy a change** (after it's merged to `main`):
+```bash
+ssh <server>
+su - deploy -c "cd /home/deploy/app && ./deploy.sh"
+```
+`deploy.sh` pulls `origin/main`, reinstalls deps only when a lockfile changed, rebuilds the
+backend + web assets (`dist/` is gitignored, so a build is always required), and restarts
+PM2. Runtime state (`.env`, `connector.sqlite*`, `node_modules/`, `dist/`) is gitignored, so
+the pull never touches it.
+
+**First-time server setup:**
+- Node 20+. Clone to `/home/deploy/app`; register a read-only deploy key so the box can pull.
+- `npm ci && npm run build` **and** `cd web && npm ci && npm run build`.
+- `pm2 start dist/server.js --name email-connector`, then `pm2 save` + `pm2 startup`. Run it
+  from the repo root so it can serve `web/dist` for /authorize, /login, /authenticate.
+- Front with Caddy; point `connector.ipromo.com` (A record, Cloudflare DNS-only) at the box.
 - **Last:** add the Linode static IP to SendGrid → IP Access Management (server IP first,
   keep a break-glass IP).
 
