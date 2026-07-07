@@ -1,0 +1,33 @@
+{
+  "name": "ipromo-email-connector",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Claude custom connector: send email as your own @ipromo.com address via SendGrid. Identity verified through Stytch (federated to Microsoft Entra).",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "test:send": "tsx scripts/test-send.ts"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@sendgrid/mail": "^8.1.3",
+    "better-sqlite3": "^11.3.0",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "jose": "^5.10.0",
+    "stytch": "^12.0.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  }
+}

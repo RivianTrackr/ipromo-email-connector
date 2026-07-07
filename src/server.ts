@@ -1,0 +1,129 @@
+import express from "express";
+import path from "node:path";
+import { z } from "zod";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
+import { config } from "./config.js";
+import {
+  authenticate,
+  isAllowedSender,
+  protectedResourceMetadata,
+  wwwAuthenticate,
+  type AuthedUser,
+} from "./auth.js";
+import { sendOne, type OutgoingMessage } from "./email.js";
+import { assertUnderCaps, recordSend } from "./store.js";
+
+const app = express();
+app.use(express.json({ limit: "5mb" }));
+
+// ── Discovery: where Claude should authenticate ────────────────────────────
+app.get("/.well-known/oauth-protected-resource", (_req, res) => {
+  res.json(protectedResourceMetadata());
+});
+
+app.get("/healthz", (_req, res) => res.json({ ok: true }));
+
+// ── Tool schema (the "dumb" send surface; no `from` accepted) ──────────────
+const contact = z.object({ email: z.string().email(), name: z.string().optional() });
+const message = z.object({
+  to: z.array(contact).min(1),
+  subject: z.string().min(1),
+  html: z.string().min(1),
+  text: z.string().optional(),
+  cc: z.array(contact).optional(),
+  bcc: z.array(contact).optional(),
+  replyTo: contact.optional(),
+});
+const sendEmailInput = { messages: z.array(message).min(1).max(200) };
+
+// Build a per-request MCP server bound to the authenticated user so the tool
+// handler can enforce `from` = the verified identity.
+function buildServer(user: AuthedUser): McpServer {
+  const server = new McpServer({ name: "ipromo-email-connector", version: "0.1.0" });
+
+  server.tool(
+    "send_email",
+    "Send one or more fully-rendered emails from your own verified iPromo address. " +
+      "Do not include a 'from' — it is set automatically to your identity. " +
+      "The caller is responsible for unsubscribe links and list compliance.",
+    sendEmailInput,
+    async ({ messages }) => {
+      if (!isAllowedSender(user.email)) {
+        throw new Error(`Sender ${user.email} is not on an approved domain.`);
+      }
+      assertUnderCaps(user.email, messages.length);
+
+      const results = [];
+      for (const m of messages as OutgoingMessage[]) {
+        const r = await sendOne(user.email, undefined, m);
+        recordSend({
+          ts: new Date().toISOString(),
+          senderEmail: user.email,
+          toEmails: m.to.map((t) => t.email),
+          subject: m.subject,
+          status: r.status,
+          sendgridId: r.sendgridId,
+          error: r.error,
+        });
+        results.push({
+          to: m.to.map((t) => t.email),
+          subject: m.subject,
+          status: r.status,
+          sendgridId: r.sendgridId,
+          error: r.error,
+        });
+      }
+
+      const sent = results.filter((r) => r.status === "sent").length;
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Sent ${sent}/${results.length} as ${user.email}.\n${JSON.stringify(
+              results,
+              null,
+              2
+            )}`,
+          },
+        ],
+      };
+    }
+  );
+
+  return server;
+}
+
+// ── MCP endpoint (stateless streamable HTTP; auth enforced per request) ────
+app.post("/mcp", async (req, res) => {
+  const user = await authenticate(req.header("authorization"));
+  if (!user) {
+    res.setHeader("WWW-Authenticate", wwwAuthenticate);
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+
+  const server = buildServer(user);
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  res.on("close", () => {
+    transport.close();
+    server.close();
+  });
+  await server.connect(transport);
+  await transport.handleRequest(req, res, req.body);
+});
+
+// ── Hosted authorization/consent UI (Stytch IdentityProvider) ──────────────
+// Serve the built frontend from web/dist. API routes above take precedence;
+// these SPA routes just hand back index.html and React does the rest.
+const webDist = path.resolve("web/dist");
+app.use(express.static(webDist));
+for (const spaRoute of ["/authorize", "/login", "/authenticate"]) {
+  app.get(spaRoute, (_req, res) => res.sendFile(path.join(webDist, "index.html")));
+}
+
+app.listen(config.port, () => {
+  console.log(`iPromo email connector listening on :${config.port}`);
+  console.log(`Resource: ${config.baseUrl}`);
+  console.log(`Auth server: ${config.stytch.authorizationServer}`);
+});
