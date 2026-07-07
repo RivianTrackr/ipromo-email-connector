@@ -19,6 +19,34 @@ src/
   server.ts   Express + MCP streamable-HTTP endpoint + send_email tool
 ```
 
+## Attachments & inline images
+The `send_email` tool accepts an optional `attachments` array on each message. Each entry
+carries the file as **base64** in `content`:
+
+```jsonc
+{
+  "content": "<base64 bytes>",   // required
+  "filename": "quote.pdf",        // required
+  "type": "application/pdf",       // MIME type (recommended)
+  "disposition": "attachment",     // or "inline" (default: "attachment")
+  "contentId": "logo"              // required for inline images only
+}
+```
+
+**Inline images must use the `cid:` pattern.** Do not embed images as `data:` URIs or
+hotlinked URLs — most clients (Outlook especially) strip both, which is why they "don't go
+through." Instead, attach the image with `disposition: "inline"` and a `contentId`, then
+reference that id in the HTML:
+
+```html
+<img src="cid:logo" alt="logo">
+```
+
+with the matching attachment `{ "disposition": "inline", "contentId": "logo", ... }`.
+
+**Size:** the request body limit is 30MB (SendGrid's total-message ceiling). Base64 inflates
+files ~33%, so keep original attachments under ~20MB.
+
 ## Local run
 ```bash
 npm install

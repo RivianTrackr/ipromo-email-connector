@@ -15,7 +15,8 @@ import { sendOne, type OutgoingMessage } from "./email.js";
 import { assertUnderCaps, recordSend } from "./store.js";
 
 const app = express();
-app.use(express.json({ limit: "5mb" }));
+// 30mb accommodates base64-encoded attachments; SendGrid caps total message size ~30MB.
+app.use(express.json({ limit: "30mb" }));
 
 // ── Discovery: where Claude should authenticate ────────────────────────────
 app.get("/.well-known/oauth-protected-resource", (_req, res) => {
@@ -26,6 +27,16 @@ app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
 // ── Tool schema (the "dumb" send surface; no `from` accepted) ──────────────
 const contact = z.object({ email: z.string().email(), name: z.string().optional() });
+const attachment = z.object({
+  content: z.string().min(1).describe("Base64-encoded file contents."),
+  filename: z.string().min(1),
+  type: z.string().optional().describe('MIME type, e.g. "application/pdf" or "image/png".'),
+  disposition: z.enum(["attachment", "inline"]).optional(),
+  contentId: z
+    .string()
+    .optional()
+    .describe('For inline images: the id referenced as <img src="cid:THIS_ID"> in the HTML.'),
+});
 const message = z.object({
   to: z.array(contact).min(1),
   subject: z.string().min(1),
@@ -34,6 +45,7 @@ const message = z.object({
   cc: z.array(contact).optional(),
   bcc: z.array(contact).optional(),
   replyTo: contact.optional(),
+  attachments: z.array(attachment).optional(),
 });
 const sendEmailInput = { messages: z.array(message).min(1).max(200) };
 
@@ -46,6 +58,9 @@ function buildServer(user: AuthedUser): McpServer {
     "send_email",
     "Send one or more fully-rendered emails from your own verified iPromo address. " +
       "Do not include a 'from' — it is set automatically to your identity. " +
+      "Files (PDFs, images, etc.) go in 'attachments' with base64 'content'. " +
+      "To embed an image inline, add it as an attachment with disposition:'inline' and a " +
+      "'contentId', then reference it in the HTML as <img src=\"cid:THAT_ID\">. " +
       "The caller is responsible for unsubscribe links and list compliance.",
     sendEmailInput,
     async ({ messages }) => {

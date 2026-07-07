@@ -3,6 +3,18 @@ import { config } from "./config.js";
 
 sgMail.setApiKey(config.sendgridApiKey);
 
+export interface Attachment {
+  /** Base64-encoded file contents. */
+  content: string;
+  filename: string;
+  /** MIME type, e.g. "application/pdf" or "image/png". */
+  type?: string;
+  /** "attachment" (default) or "inline" for images referenced via cid: in the HTML. */
+  disposition?: "attachment" | "inline";
+  /** Required for inline images: the id referenced as <img src="cid:THIS_ID"> in the HTML. */
+  contentId?: string;
+}
+
 export interface OutgoingMessage {
   to: { email: string; name?: string }[];
   subject: string;
@@ -11,6 +23,7 @@ export interface OutgoingMessage {
   cc?: { email: string; name?: string }[];
   bcc?: { email: string; name?: string }[];
   replyTo?: { email: string; name?: string };
+  attachments?: Attachment[];
 }
 
 export interface SendResult {
@@ -43,6 +56,18 @@ export async function sendOne(
       subject: msg.subject,
       html: msg.html,
       ...(msg.text ? { text: msg.text } : {}),
+      ...(msg.attachments && msg.attachments.length
+        ? {
+            attachments: msg.attachments.map((a) => ({
+              content: a.content,
+              filename: a.filename,
+              ...(a.type ? { type: a.type } : {}),
+              disposition: a.disposition ?? "attachment",
+              // SendGrid expects snake_case `content_id`; only meaningful for inline parts.
+              ...(a.contentId ? { content_id: a.contentId } : {}),
+            })),
+          }
+        : {}),
       trackingSettings: {
         clickTracking: { enable: true, enableText: false },
         openTracking: { enable: true },
