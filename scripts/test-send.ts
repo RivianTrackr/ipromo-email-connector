@@ -29,7 +29,8 @@ const result = await sendOne(from, undefined, {
     "<p>This is a test from the <strong>iPromo email connector</strong>.</p>" +
     "<p>If you're reading this, the SendGrid key and domain authentication work. " +
     "Check the message headers for <code>dkim=pass</code> and <code>dmarc=pass</code>.</p>" +
-    '<p>Inline image (should render here): <img src="cid:reddot" width="16" height="16" alt="red dot"></p>' +
+    '<p>Inline image via cid (should render here): <img src="cid:reddot" width="16" height="16" alt="red dot"></p>' +
+    "<p>Inline image via token (should also render here): [[IMG:reddot|alt=red dot|width=16]]</p>" +
     "<p>There should also be a <code>hello.txt</code> file and a <code>red-dot.png</code> attached.</p>",
   attachments: [
     {

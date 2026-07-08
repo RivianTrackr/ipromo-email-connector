@@ -44,6 +44,21 @@ reference that id in the HTML:
 
 with the matching attachment `{ "disposition": "inline", "contentId": "logo", ... }`.
 
+**If your HTML pipeline strips `<img>` tags** (some upstream composers sanitize author-supplied
+image tags, even safe `cid:` ones, before the HTML reaches the connector), write a plain-text
+**token** where the image should sit instead — it survives sanitizing and is swapped for the
+`cid:` image at the last hop before SendGrid:
+
+```html
+[[IMG:logo]]                        <!-- becomes <img src="cid:logo" alt=""> -->
+[[IMG:logo|alt=iPromo|width=160]]   <!-- optional alt / width attributes -->
+```
+
+A token is replaced only when the message carries an **inline** attachment whose `contentId`
+matches; unmatched or malformed tokens are left untouched (so mistakes stay visible rather than
+rendering a broken image). Token ids are restricted to `[A-Za-z0-9_-]` and attribute values are
+HTML-escaped. See `renderImageTokens` in [`src/email.ts`](src/email.ts).
+
 **Size:** the request body limit is 30MB (SendGrid's total-message ceiling). Base64 inflates
 files ~33%, so keep original attachments under ~20MB.
 

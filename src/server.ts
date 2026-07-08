@@ -61,6 +61,9 @@ function buildServer(user: AuthedUser): McpServer {
       "Files (PDFs, images, etc.) go in 'attachments' with base64 'content'. " +
       "To embed an image inline, add it as an attachment with disposition:'inline' and a " +
       "'contentId', then reference it in the HTML as <img src=\"cid:THAT_ID\">. " +
+      "If your HTML pipeline strips <img> tags, instead write a plain-text token " +
+      "[[IMG:contentId]] where the image should sit (optionally " +
+      "[[IMG:contentId|alt=...|width=160]]) — it is swapped for the cid image before send. " +
       "The caller is responsible for unsubscribe links and list compliance.",
     sendEmailInput,
     async ({ messages }) => {
