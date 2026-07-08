@@ -24,4 +24,15 @@ export const config = {
     .split(",")
     .map((d) => d.trim().toLowerCase())
     .filter(Boolean),
+
+  // Server-side image fetch (the `images` param): hosts we'll pull image URLs
+  // from. This allowlist is the SSRF control — keep it tight.
+  allowedImageHosts: (
+    process.env.ALLOWED_IMAGE_HOSTS ?? "merchai-onboarding.s3.us-east-2.amazonaws.com"
+  )
+    .split(",")
+    .map((h) => h.trim().toLowerCase())
+    .filter(Boolean),
+  maxImageBytes: Number(process.env.MAX_IMAGE_BYTES ?? 10 * 1024 * 1024),
+  imageFetchTimeoutMs: Number(process.env.IMAGE_FETCH_TIMEOUT_MS ?? 10_000),
 };

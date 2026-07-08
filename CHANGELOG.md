@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 All dates are UTC; this is an internal service without tagged releases.
 
+## [0.2.2] - 2026-07-08
+
+### Added
+- **Server-side image fetch via an `images: [{ url, contentId }]` parameter.** For
+  callers who have image URLs but can't attach the bytes themselves (e.g. S3
+  assets), the connector fetches each URL and inlines it under its `contentId`;
+  place it with the existing `[[IMG:contentId]]` token or `<img src="cid:...">`.
+- Config for the fetch: `ALLOWED_IMAGE_HOSTS` (allowlist / SSRF control, defaults
+  to the merchAI S3 bucket), `MAX_IMAGE_BYTES` (10 MB), `IMAGE_FETCH_TIMEOUT_MS`.
+
+### Security
+- The image fetch is deliberately narrow: https-only, host must be allowlisted,
+  redirects off the allowlisted host are refused, `Content-Type` must be `image/*`,
+  body size is capped, and the request times out. A failed fetch fails only that
+  message (with a clear error) instead of sending a partial body.
+
 ## [0.2.1] - 2026-07-08
 
 ### Added
