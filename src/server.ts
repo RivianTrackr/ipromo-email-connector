@@ -44,6 +44,8 @@ const imageRef = z.object({
     .string()
     .regex(/^[A-Za-z0-9_-]+$/, "contentId: letters, numbers, _ or - only")
     .describe('Placed via [[IMG:contentId]] or <img src="cid:contentId"> in the HTML.'),
+  alt: z.string().optional().describe("Alt text for the placed image."),
+  width: z.number().int().positive().optional().describe("Rendered width in px."),
 });
 const message = z.object({
   to: z.array(contact).min(1),
@@ -85,7 +87,9 @@ function buildServer(user: AuthedUser): McpServer {
 
       const results = [];
       for (const m of messages) {
-        const { images, ...msg } = m as typeof m & { images?: { url: string; contentId: string }[] };
+        const { images, ...msg } = m as typeof m & {
+          images?: { url: string; contentId: string; alt?: string; width?: number }[];
+        };
 
         // Fetch any URL-referenced images server-side and inline them. A fetch
         // failure fails just this message — we don't send a half-built body.
@@ -97,6 +101,11 @@ function buildServer(user: AuthedUser): McpServer {
               ...((msg as OutgoingMessage).attachments ?? []),
               ...fetched,
             ];
+            (msg as OutgoingMessage).inlineImageMeta = images.map((i) => ({
+              contentId: i.contentId,
+              alt: i.alt,
+              width: i.width,
+            }));
           } catch (err) {
             r = { status: "error", error: err instanceof Error ? err.message : "image fetch failed" };
           }

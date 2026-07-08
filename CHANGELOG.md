@@ -6,6 +6,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 All dates are UTC; this is an internal service without tagged releases.
 
+## [0.2.3] - 2026-07-08
+
+### Added
+- **Server-side downscaling of fetched images** (via `sharp`): capped at 640px
+  wide and recompressed before inlining — JPEG q75 for opaque images, PNG when
+  there's transparency. A ~440 KB poster now inlines at ~44 KB. Best-effort: if a
+  frame can't be decoded, the original bytes are used unchanged.
+- **`alt` and `width` on `images` entries**, and **default styling on the injected
+  `<img>`** (`display:block; border-radius:6px; max-width:480px`) so large originals
+  don't render full-bleed. Token-level `[[IMG:id|alt=…|width=…]]` attributes still
+  win over the per-image defaults.
+- `media.asicentral.com` added to the default image-fetch allowlist.
+
 ## [0.2.2] - 2026-07-08
 
 ### Added

@@ -1,6 +1,6 @@
 {
   "name": "ipromo-email-connector",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "private": true,
   "description": "Claude custom connector: send email as your own @ipromo.com address via SendGrid. Identity verified through Stytch (federated to Microsoft Entra).",
   "type": "module",
@@ -20,6 +20,7 @@
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
     "jose": "^5.10.0",
+    "sharp": "^0.35.3",
     "stytch": "^12.0.0",
     "zod": "^3.23.8"
   },
