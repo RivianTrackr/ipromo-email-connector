@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 All dates are UTC; this is an internal service without tagged releases.
 
+## [0.2.1] - 2026-07-08
+
+### Added
+- **Inline-image placement via `[[IMG:contentId]]` body tokens.** Some upstream
+  HTML composers strip author-supplied `<img>` tags — even safe `cid:` references —
+  before the message reaches the connector, so an inline image would deliver as a
+  file but not sit at its spot in the body. A plain-text token survives sanitizing
+  and is swapped for `<img src="cid:contentId">` at the last hop before SendGrid.
+  Supports optional `[[IMG:logo|alt=iPromo|width=160]]` attributes. Only tokens with
+  a matching **inline** attachment are replaced; ids are restricted to
+  `[A-Za-z0-9_-]` and attribute values are HTML-escaped (`renderImageTokens`).
+
 ## [0.2.0] - 2026-07-07
 
 ### Added
