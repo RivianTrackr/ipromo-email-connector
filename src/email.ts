@@ -15,6 +15,13 @@ export interface Attachment {
   contentId?: string;
 }
 
+/** Placement hints for an inline image, keyed by contentId (from the `images` param). */
+export interface InlineImageMeta {
+  contentId: string;
+  alt?: string;
+  width?: number;
+}
+
 export interface OutgoingMessage {
   to: { email: string; name?: string }[];
   subject: string;
@@ -24,6 +31,8 @@ export interface OutgoingMessage {
   bcc?: { email: string; name?: string }[];
   replyTo?: { email: string; name?: string };
   attachments?: Attachment[];
+  /** Default alt/width for [[IMG:contentId]] tokens; token-level attrs win. */
+  inlineImageMeta?: InlineImageMeta[];
 }
 
 export interface SendResult {
@@ -55,8 +64,17 @@ function escapeAttr(v: string): string {
  * A token is replaced only when the message carries an **inline** attachment whose
  * `contentId` matches; unmatched or malformed tokens are left untouched, so an
  * authoring mistake stays visible instead of becoming a broken-image icon.
+ *
+ * Attributes resolve token-first, then `meta` (from the `images` param), then a
+ * default. The generated tag always carries sane styling so a large original
+ * doesn't render full-bleed: `display:block`, `border-radius:6px`, and either the
+ * requested `width` (capped responsive) or a 480px max-width fallback.
  */
-export function renderImageTokens(html: string, attachments?: Attachment[]): string {
+export function renderImageTokens(
+  html: string,
+  attachments?: Attachment[],
+  meta?: InlineImageMeta[]
+): string {
   if (!html.includes("[[IMG:") || !attachments?.length) return html;
 
   const inlineIds = new Set(
@@ -66,13 +84,16 @@ export function renderImageTokens(html: string, attachments?: Attachment[]): str
   );
   if (!inlineIds.size) return html;
 
+  const metaById = new Map((meta ?? []).map((m) => [m.contentId, m]));
+
   return html.replace(/\[\[IMG:([^\]]+)\]\]/g, (whole, body: string) => {
     const [rawId, ...attrParts] = body.split("|");
     const id = rawId.trim();
     if (!IMG_ID_RE.test(id) || !inlineIds.has(id)) return whole; // leave the token as-is
 
-    let alt = "";
-    let width = "";
+    const fallback = metaById.get(id);
+    let alt = fallback?.alt ?? "";
+    let width = fallback?.width && fallback.width > 0 ? String(fallback.width) : "";
     for (const part of attrParts) {
       const eq = part.indexOf("=");
       if (eq === -1) continue;
@@ -82,8 +103,13 @@ export function renderImageTokens(html: string, attachments?: Attachment[]): str
       else if (key === "width" && /^\d+$/.test(val)) width = val;
     }
 
+    const style = width
+      ? "display:block;border-radius:6px;max-width:100%"
+      : "display:block;border-radius:6px;max-width:480px";
     return (
-      `<img src="cid:${id}" alt="${escapeAttr(alt)}"` + (width ? ` width="${width}"` : "") + " />"
+      `<img src="cid:${id}" alt="${escapeAttr(alt)}"` +
+      (width ? ` width="${width}"` : "") +
+      ` style="${style}" />`
     );
   });
 }
@@ -110,7 +136,7 @@ export async function sendOne(
         },
       ],
       subject: msg.subject,
-      html: renderImageTokens(msg.html, msg.attachments),
+      html: renderImageTokens(msg.html, msg.attachments, msg.inlineImageMeta),
       ...(msg.text ? { text: msg.text } : {}),
       ...(msg.attachments && msg.attachments.length
         ? {

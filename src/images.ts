@@ -1,3 +1,4 @@
+import sharp from "sharp";
 import { config } from "./config.js";
 import type { Attachment } from "./email.js";
 
@@ -6,6 +7,10 @@ export interface ImageRef {
   url: string;
   /** Id this image is placed by — [[IMG:contentId]] or <img src="cid:contentId">. */
   contentId: string;
+  /** Optional alt text applied to the placed <img>. */
+  alt?: string;
+  /** Optional rendered width in px applied to the placed <img>. */
+  width?: number;
 }
 
 const CONTENT_ID_RE = /^[A-Za-z0-9_-]+$/;
@@ -17,6 +22,33 @@ const EXT_BY_TYPE: Record<string, string> = {
   "image/webp": "webp",
   "image/svg+xml": "svg",
 };
+
+// Formats we downscale/recompress. GIF (animation) and SVG (vector) are passed
+// through untouched so we don't flatten or rasterize them.
+const OPTIMIZABLE = new Set(["image/png", "image/jpeg", "image/webp"]);
+
+/**
+ * Shrink an oversized email image before inlining: cap the longest edge at 640px
+ * (retina for a ~480px display) and recompress — JPEG q75 for opaque images, PNG
+ * for anything with transparency. Best-effort: if decoding fails, the original
+ * bytes are used unchanged rather than failing the send.
+ */
+async function optimize(
+  buf: Buffer,
+  type: string
+): Promise<{ buffer: Buffer; type: string; ext: string }> {
+  if (!OPTIMIZABLE.has(type)) return { buffer: buf, type, ext: EXT_BY_TYPE[type] ?? "img" };
+  try {
+    const pipeline = sharp(buf, { failOn: "none" }).resize({ width: 640, withoutEnlargement: true });
+    const meta = await sharp(buf, { failOn: "none" }).metadata();
+    if (meta.hasAlpha) {
+      return { buffer: await pipeline.png({ compressionLevel: 9 }).toBuffer(), type: "image/png", ext: "png" };
+    }
+    return { buffer: await pipeline.jpeg({ quality: 75 }).toBuffer(), type: "image/jpeg", ext: "jpg" };
+  } catch {
+    return { buffer: buf, type, ext: EXT_BY_TYPE[type] ?? "img" };
+  }
+}
 
 /**
  * Fetch each referenced image URL server-side and return it as an inline
@@ -98,10 +130,11 @@ async function fetchOne(img: ImageRef): Promise<Attachment> {
     );
   }
 
+  const opt = await optimize(buf, type);
   return {
-    content: buf.toString("base64"),
-    filename: `${img.contentId}.${EXT_BY_TYPE[type] ?? "img"}`,
-    type,
+    content: opt.buffer.toString("base64"),
+    filename: `${img.contentId}.${opt.ext}`,
+    type: opt.type,
     disposition: "inline",
     contentId: img.contentId,
   };

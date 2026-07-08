@@ -66,7 +66,8 @@ server fetches each URL and inlines it for you — no base64 on your side:
 {
   "html": "<p>Our new cap:</p>[[IMG:cap]]",
   "images": [
-    { "url": "https://<allowed-host>/poster.png", "contentId": "cap" }
+    { "url": "https://<allowed-host>/poster.png", "contentId": "cap",
+      "alt": "Branded cap", "width": 300 }   // alt/width optional
   ]
 }
 ```
@@ -74,10 +75,15 @@ server fetches each URL and inlines it for you — no base64 on your side:
 The server attaches each as an inline image under its `contentId`; place it with the same
 `[[IMG:contentId]]` token (or `<img src="cid:contentId">`). This is a server-side outbound
 fetch, so it's locked down: **https only**, the host must be on `ALLOWED_IMAGE_HOSTS` (the SSRF
-control — defaults to the merchAI S3 bucket), redirects off that host are refused, the response
-must be `image/*`, size is capped at `MAX_IMAGE_BYTES` (10 MB), and the request times out
-(`IMAGE_FETCH_TIMEOUT_MS`). A failed fetch fails just that message with a clear error rather than
-sending a half-built body. See [`src/images.ts`](src/images.ts).
+control), redirects off that host are refused, the response must be `image/*`, size is capped at
+`MAX_IMAGE_BYTES` (10 MB), and the request times out (`IMAGE_FETCH_TIMEOUT_MS`). A failed fetch
+fails just that message with a clear error rather than sending a half-built body.
+
+Fetched images are **downscaled before inlining** — capped at 640px wide and recompressed
+(JPEG q75 for opaque images, PNG when there's transparency) to keep emails light. The placed
+`<img>` gets sane defaults (`display:block; border-radius:6px; max-width:480px`); pass `width`
+(and `alt`) per image, or `[[IMG:cap|alt=…|width=…]]` on the token, to override. See
+[`src/images.ts`](src/images.ts).
 
 **Size:** the request body limit is 30MB (SendGrid's total-message ceiling). Base64 inflates
 files ~33%, so keep original attachments under ~20MB.
