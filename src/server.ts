@@ -11,7 +11,8 @@ import {
   wwwAuthenticate,
   type AuthedUser,
 } from "./auth.js";
-import { sendOne, type OutgoingMessage } from "./email.js";
+import { sendOne, type OutgoingMessage, type SendResult } from "./email.js";
+import { fetchInlineImages } from "./images.js";
 import { assertUnderCaps, recordSend } from "./store.js";
 
 const app = express();
@@ -37,6 +38,13 @@ const attachment = z.object({
     .optional()
     .describe('For inline images: the id referenced as <img src="cid:THIS_ID"> in the HTML.'),
 });
+const imageRef = z.object({
+  url: z.string().url().describe("Absolute https URL of the image (must be on an allowed host)."),
+  contentId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]+$/, "contentId: letters, numbers, _ or - only")
+    .describe('Placed via [[IMG:contentId]] or <img src="cid:contentId"> in the HTML.'),
+});
 const message = z.object({
   to: z.array(contact).min(1),
   subject: z.string().min(1),
@@ -46,6 +54,7 @@ const message = z.object({
   bcc: z.array(contact).optional(),
   replyTo: contact.optional(),
   attachments: z.array(attachment).optional(),
+  images: z.array(imageRef).optional(),
 });
 const sendEmailInput = { messages: z.array(message).min(1).max(200) };
 
@@ -64,6 +73,8 @@ function buildServer(user: AuthedUser): McpServer {
       "If your HTML pipeline strips <img> tags, instead write a plain-text token " +
       "[[IMG:contentId]] where the image should sit (optionally " +
       "[[IMG:contentId|alt=...|width=160]]) — it is swapped for the cid image before send. " +
+      "If you only have image URLs (not bytes), pass 'images': [{url, contentId}] and the " +
+      "server fetches each and inlines it; place them with the same [[IMG:contentId]] token. " +
       "The caller is responsible for unsubscribe links and list compliance.",
     sendEmailInput,
     async ({ messages }) => {
@@ -73,8 +84,24 @@ function buildServer(user: AuthedUser): McpServer {
       assertUnderCaps(user.email, messages.length);
 
       const results = [];
-      for (const m of messages as OutgoingMessage[]) {
-        const r = await sendOne(user.email, undefined, m);
+      for (const m of messages) {
+        const { images, ...msg } = m as typeof m & { images?: { url: string; contentId: string }[] };
+
+        // Fetch any URL-referenced images server-side and inline them. A fetch
+        // failure fails just this message — we don't send a half-built body.
+        let r: SendResult | undefined;
+        if (images?.length) {
+          try {
+            const fetched = await fetchInlineImages(images);
+            (msg as OutgoingMessage).attachments = [
+              ...((msg as OutgoingMessage).attachments ?? []),
+              ...fetched,
+            ];
+          } catch (err) {
+            r = { status: "error", error: err instanceof Error ? err.message : "image fetch failed" };
+          }
+        }
+        r ??= await sendOne(user.email, undefined, msg as OutgoingMessage);
         recordSend({
           ts: new Date().toISOString(),
           senderEmail: user.email,
