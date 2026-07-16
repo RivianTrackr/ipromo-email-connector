@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 All dates are UTC; this is an internal service without tagged releases.
 
+## [0.2.5] - 2026-07-16
+
+### Security
+- **Upgraded the web (consent page) build chain**: vite 5.4 → 8.1, `@vitejs/plugin-react`
+  4 → 6, `@stytch/react` 19 → 20, `@stytch/vanilla-js` 5 → 6. Resolves all five open
+  Dependabot alerts — three vite advisories (incl. a high-severity `server.fs.deny`
+  bypass), plus `uuid` and `esbuild`, both of which are no longer in the dependency
+  tree at all.
+
+### Changed
+- `createStytchUIClient` now imports from the root `@stytch/react` (v20 removed the
+  `/ui` subpath — this was the one breaking change; vite 8's bundler surfaced it).
+- Consent-page bundle shrank 654 KB → 294 KB with Stytch v20.
+
 ## [0.2.4] - 2026-07-16
 
 ### Changed
