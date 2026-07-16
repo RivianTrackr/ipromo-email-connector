@@ -18,8 +18,8 @@ export const config = {
 
   sendgridApiKey: required("SENDGRID_API_KEY"),
 
-  perUserDailyCap: Number(process.env.PER_USER_DAILY_CAP ?? 200),
-  globalDailyCap: Number(process.env.GLOBAL_DAILY_CAP ?? 2000),
+  perUserDailyCap: Number(process.env.PER_USER_DAILY_CAP ?? 10000),
+  globalDailyCap: Number(process.env.GLOBAL_DAILY_CAP ?? 50000),
   allowedSenderDomains: (process.env.ALLOWED_SENDER_DOMAINS ?? "ipromo.com")
     .split(",")
     .map((d) => d.trim().toLowerCase())
