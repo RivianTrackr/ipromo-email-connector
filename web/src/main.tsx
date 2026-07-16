@@ -1,7 +1,7 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { StytchProvider } from "@stytch/react";
-import { createStytchUIClient } from "@stytch/react/ui";
+// v20 moved createStytchUIClient to the root export (the /ui subpath is gone).
+import { StytchProvider, createStytchUIClient } from "@stytch/react";
 import { App } from "./App";
 
 // Public token is safe in the browser. The frontend never sees the Stytch secret.

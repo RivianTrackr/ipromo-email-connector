@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "web-preview",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd web && npx vite preview --port 4173 --strictPort"],
+      "port": 4173
+    }
+  ]
+}

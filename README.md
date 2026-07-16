@@ -104,7 +104,7 @@ cd web && npm install
 cp .env.example .env      # set VITE_STYTCH_PUBLIC_TOKEN (Stytch public token)
 npm run build             # outputs web/dist, served by the backend at /authorize etc.
 ```
-Note: `createStytchUIClient` is imported from `@stytch/react/ui` (not `@stytch/vanilla-js`).
+Note: `createStytchUIClient` is imported from the root `@stytch/react` (v20 removed the `/ui` subpath).
 
 ### Stytch dashboard settings the frontend needs
 - **Frontend SDKs → Authorized domains:** add `connector.ipromo.com` (and `localhost` for dev).
