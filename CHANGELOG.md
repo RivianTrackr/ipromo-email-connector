@@ -6,6 +6,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 All dates are UTC; this is an internal service without tagged releases.
 
+## [0.2.4] - 2026-07-16
+
+### Changed
+- **Raised the default daily send caps**: per-user cap 200 → 10,000/day, and the
+  global cap 2,000 → 50,000/day so the higher per-user limit is actually reachable
+  across senders. Both remain overridable via `PER_USER_DAILY_CAP` /
+  `GLOBAL_DAILY_CAP`. Caps count sent messages per verified sender (recipients on a
+  message don't multiply the count).
+
 ## [0.2.3] - 2026-07-08
 
 ### Added
