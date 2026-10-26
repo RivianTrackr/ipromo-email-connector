@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 All dates are UTC; this is an internal service without tagged releases.
 
+## [0.3.0] - 2026-10-26
+
+### Added
+- **`POST /api/showcase/send`** so the showcase site can send email through the connector.
+  The site runs on Cloudflare with no fixed outbound IP and can't pass SendGrid's IP
+  allowlist, so it sends from this box instead. It authenticates with a static Bearer
+  token (`SHOWCASE_API_TOKEN`, compared in constant time), and `from` is limited to
+  `SHOWCASE_SENDERS`. It takes the same message shape as `send_email` and goes through
+  the same caps and audit log. The endpoint stays closed until the token is set.
+
+### Changed
+- The per-message send loop (caps, image inlining, SendGrid, audit log) is now one
+  shared `sendBatch` used by both the MCP tool and the showcase endpoint.
+
 ## [0.2.5] - 2026-07-16
 
 ### Security

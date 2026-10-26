@@ -34,7 +34,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS auth_failures (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
     ts      TEXT NOT NULL,
-    reason  TEXT NOT NULL,      -- jwt_invalid | no_subject | email_unresolved | domain_not_allowed
+    reason  TEXT NOT NULL,      -- jwt_invalid | no_subject | email_unresolved | domain_not_allowed | showcase_token_invalid
     detail  TEXT
   );
 `);
