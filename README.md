@@ -152,16 +152,19 @@ Note: `createStytchUIClient` is imported from the root `@stytch/react` (v20 remo
 - **Connected Apps → Authorization URL:** `https://connector.ipromo.com/authorize` (already set).
 
 ## Deploy (Linode)
-The box runs at `/home/deploy/app` as the `deploy` user, under **PM2** (process
-`email-connector` → `dist/server.js` on `:8080`), fronted by **Caddy** (auto HTTPS,
-`:443 → 127.0.0.1:8080`). The app dir is a git checkout tracking `origin/main`, pulling
+The connector lives on the **apps Linode (172.232.20.34)**, alongside `apps.ipromo.com`. It
+runs at `/home/deploy/app` as the `deploy` user, under **PM2** (process `email-connector` →
+`dist/server.js` on `:8080`), fronted by **Apache** as the reverse proxy, with
+`connector.ipromo.com` proxied through Cloudflare. Nothing in the app runs as root. The app dir is a git checkout tracking `origin/main`, pulling
 via a read-only GitHub deploy key.
 
 **Deploy a change** (after it's merged to `main`):
 ```bash
-ssh <server>
-su - deploy -c "cd /home/deploy/app && ./deploy.sh"
+ssh ipromo-apps 'su - deploy -c "cd /home/deploy/app && ./deploy.sh"'
 ```
+or just `./scripts/deploy-remote.sh` (or `/deploy` in Claude Code), which also checks health.
+`ipromo-apps` logs in as root with your SSH key only. The first command drops to `deploy`, so
+the pull, install, builds and PM2 restart all run as `deploy`.
 `deploy.sh` pulls `origin/main`, reinstalls deps only when a lockfile changed, rebuilds the
 backend + web assets (`dist/` is gitignored, so a build is always required), and restarts
 PM2. Runtime state (`.env`, `connector.sqlite*`, `node_modules/`, `dist/`) is gitignored, so
@@ -172,7 +175,8 @@ the pull never touches it.
 - `npm ci && npm run build` **and** `cd web && npm ci && npm run build`.
 - `pm2 start dist/server.js --name email-connector`, then `pm2 save` + `pm2 startup`. Run it
   from the repo root so it can serve `web/dist` for /authorize, /login, /authenticate.
-- Front with Caddy; point `connector.ipromo.com` (A record, Cloudflare DNS-only) at the box.
+- Front with a reverse proxy (Apache on the apps box) to `127.0.0.1:8080`; point
+  `connector.ipromo.com` at the box (currently proxied through Cloudflare).
 - **Last:** add the Linode static IP to SendGrid → IP Access Management (server IP first,
   keep a break-glass IP).
 

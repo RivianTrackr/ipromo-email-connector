@@ -14,7 +14,7 @@ Deploy the iPromo email connector's **origin/main** to production.
 
    ```bash
    git fetch origin main
-   SERVER=$(ssh ipromo-connector 'su - deploy -c "cd /home/deploy/app && git rev-parse --short HEAD"')
+   SERVER=$(ssh ipromo-apps 'su - deploy -c "cd /home/deploy/app && git rev-parse --short HEAD"')
    git log --oneline "$SERVER"..origin/main
    ```
 
@@ -32,9 +32,34 @@ Deploy the iPromo email connector's **origin/main** to production.
 
 ## Environment facts
 
-- Server: SSH alias `ipromo-connector` (Linode). App dir `/home/deploy/app`, a git
-  checkout of `main` (read-only deploy key). PM2 process `email-connector`, runs as
-  the `deploy` user — never as root.
+- Server: the apps Linode at **172.232.20.34** (shared with `apps.ipromo.com`, fronted
+  by Apache), reached via SSH alias `ipromo-apps`. App dir `/home/deploy/app`, a git
+  checkout of `main` (read-only deploy key). PM2 process `email-connector`.
+- **Only the SSH login is root.** Every command starts with `su - deploy -c`, so the
+  pull, `npm ci`, both builds and the PM2 restart run as `deploy`. The connector, PM2,
+  `node_modules/`, `dist/` and `connector.sqlite*` are all owned by `deploy`, and
+  nothing in the app runs as root. Keep it that way: never run app commands as root
+  (a root `npm ci` or `pm2` call leaves root-owned files the next deploy can't touch).
+- If `ssh ipromo-apps` fails to resolve or connects to the wrong box, the alias is
+  missing or stale. It must point at the IP above, logging in as root with Jose's SSH
+  key only (no password):
+
+  ```
+  Host ipromo-apps
+    HostName 172.232.20.34
+    User root
+    IdentityFile ~/.ssh/<your-key>
+    IdentitiesOnly yes
+  ```
+
+  Without that key on the machine running the deploy, SSH fails with
+  `Permission denied (publickey)`. Don't try to fall back to a password.
+
+  DNS won't tell you the box: `connector.ipromo.com` is proxied through Cloudflare,
+  so it resolves to Cloudflare addresses, not the Linode.
+- This IP must be on SendGrid → IP Access Management, since it's what every send
+  leaves from. If the connector ever moves boxes, add the new IP there before
+  cutting over or sends will fail.
 - `deploy.sh` never touches `.env`, `connector.sqlite*`, or other runtime state
   (all gitignored).
 - Config policy: daily send caps live in code defaults (`src/config.ts`), NOT in the
