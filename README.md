@@ -160,11 +160,12 @@ via a read-only GitHub deploy key.
 
 **Deploy a change** (after it's merged to `main`):
 ```bash
-ssh ipromo-apps 'su - deploy -c "cd /home/deploy/app && ./deploy.sh"'
+ssh ipromo-apps-deploy 'bash -lc "cd /home/deploy/app && ./deploy.sh"'
 ```
 or just `./scripts/deploy-remote.sh` (or `/deploy` in Claude Code), which also checks health.
-`ipromo-apps` logs in as root with your SSH key only. The first command drops to `deploy`, so
-the pull, install, builds and PM2 restart all run as `deploy`.
+`ipromo-apps-deploy` logs in straight as `deploy` with your SSH key, so deploys never touch
+root. The root alias (`ipromo-apps`) is only for server-level work like Apache or Node
+upgrades. Both aliases are in the `/deploy` skill (`.claude/skills/deploy/SKILL.md`).
 `deploy.sh` pulls `origin/main`, reinstalls deps only when a lockfile changed, rebuilds the
 backend + web assets (`dist/` is gitignored, so a build is always required), and restarts
 PM2. Runtime state (`.env`, `connector.sqlite*`, `node_modules/`, `dist/`) is gitignored, so
