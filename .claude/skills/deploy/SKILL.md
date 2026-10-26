@@ -32,9 +32,25 @@ Deploy the iPromo email connector's **origin/main** to production.
 
 ## Environment facts
 
-- Server: SSH alias `ipromo-connector` (Linode). App dir `/home/deploy/app`, a git
-  checkout of `main` (read-only deploy key). PM2 process `email-connector`, runs as
-  the `deploy` user — never as root.
+- Server: the apps Linode at **172.232.20.34** (shared with `apps.ipromo.com`), reached
+  via SSH alias `ipromo-connector`. App dir `/home/deploy/app`, a git checkout of
+  `main` (read-only deploy key). PM2 process `email-connector`, runs as the `deploy`
+  user — never as root.
+- If `ssh ipromo-connector` fails to resolve or connects to the wrong box, the alias
+  is missing or stale. It must point at the IP above (the scripts SSH in as root and
+  `su - deploy`):
+
+  ```
+  Host ipromo-connector
+    HostName 172.232.20.34
+    User root
+  ```
+
+  DNS won't tell you the box: `connector.ipromo.com` is proxied through Cloudflare,
+  so it resolves to Cloudflare addresses, not the Linode.
+- This IP must be on SendGrid → IP Access Management, since it's what every send
+  leaves from. If the connector ever moves boxes, add the new IP there before
+  cutting over or sends will fail.
 - `deploy.sh` never touches `.env`, `connector.sqlite*`, or other runtime state
   (all gitignored).
 - Config policy: daily send caps live in code defaults (`src/config.ts`), NOT in the
