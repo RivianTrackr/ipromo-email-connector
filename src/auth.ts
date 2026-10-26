@@ -1,3 +1,4 @@
+import { createHash, timingSafeEqual } from "node:crypto";
 import * as stytch from "stytch";
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { config } from "./config.js";
@@ -99,6 +100,20 @@ export async function authenticate(authHeader?: string): Promise<AuthedUser | nu
     if (debug) console.error("[auth] error:", err);
     return null;
   }
+}
+
+const sha256 = (s: string) => createHash("sha256").update(s).digest();
+
+/**
+ * Check the showcase site's static Bearer token (constant-time). Always false
+ * when SHOWCASE_API_TOKEN is unset, so the endpoint stays closed by default.
+ */
+export function isValidShowcaseToken(authHeader?: string): boolean {
+  const expected = config.showcase.apiToken;
+  if (!expected || !authHeader?.startsWith("Bearer ")) return false;
+  const token = authHeader.slice("Bearer ".length).trim();
+  // Hash both sides so timingSafeEqual gets equal-length inputs.
+  return timingSafeEqual(sha256(token), sha256(expected));
 }
 
 /** Defense in depth: never send as anything outside the approved domain(s). */

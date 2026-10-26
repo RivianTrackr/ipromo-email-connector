@@ -16,7 +16,7 @@ src/
   auth.ts     Stytch token validation + Protected Resource Metadata  ← verify the email-claim TODO
   email.ts    SendGrid send (from = verified identity, tracking on)
   store.ts    SQLite audit log + per-user/global daily caps
-  server.ts   Express + MCP streamable-HTTP endpoint + send_email tool
+  server.ts   Express + MCP streamable-HTTP endpoint + send_email tool + showcase endpoint
 ```
 
 ## Attachments & inline images
@@ -87,6 +87,46 @@ Fetched images are **downscaled before inlining** — capped at 640px wide and r
 
 **Size:** the request body limit is 30MB (SendGrid's total-message ceiling). Base64 inflates
 files ~33%, so keep original attachments under ~20MB.
+
+## Showcase site endpoint
+The showcase site runs on Cloudflare (via Higgsfield) and has **no fixed outbound IP**, so it
+can't pass SendGrid's IP Access Management. Allow-listing Cloudflare's ranges would let anyone
+sending from Cloudflare past that check, so instead the site sends **through this connector**,
+which already sends from the allow-listed Linode IP.
+
+```http
+POST https://connector.ipromo.com/api/showcase/send
+Authorization: Bearer <SHOWCASE_API_TOKEN>
+Content-Type: application/json
+
+{
+  "from": { "email": "showcase@ipromo.com", "name": "iPromo" },   // optional
+  "messages": [
+    { "to": [{ "email": "buyer@example.com" }], "subject": "Your showcase",
+      "html": "<p>...</p>" }
+  ]
+}
+```
+
+- **Auth:** a static Bearer token (`SHOWCASE_API_TOKEN`), not Stytch. Call it from the site's
+  server side only, never from the browser. Unset token = endpoint closed.
+- **`from`:** must be one of `SHOWCASE_SENDERS` (and on `ALLOWED_SENDER_DOMAINS`). Omit it to
+  use the first listed address. `replyTo` per message works as in `send_email`.
+- **`messages`:** exactly the `send_email` message shape, so attachments, `[[IMG:…]]` tokens
+  and the `images` URL fetch all work. Up to 200 per request.
+- Same daily caps (counted against the `from` address) and the same audit log.
+
+| Status | Meaning |
+| --- | --- |
+| `200` | Batch processed. `{ from, sent, total, results[] }`; check each result's `status`. |
+| `400` | Body failed validation (`issues` lists why). |
+| `401` | Missing or wrong token. Logged to `auth_failures` as `showcase_token_invalid`. |
+| `403` | `from` isn't an allowed showcase sender. |
+| `429` | A daily cap would be exceeded. Nothing was sent. |
+
+**Enable it on the server:** add `SHOWCASE_API_TOKEN` (from `openssl rand -hex 32`) and
+`SHOWCASE_SENDERS` to `/home/deploy/app/.env`, then deploy (or `pm2 restart email-connector
+--update-env`). Rotate by changing the token there and on the site.
 
 ## Local run
 ```bash

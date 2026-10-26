@@ -7,13 +7,14 @@ import { config } from "./config.js";
 import {
   authenticate,
   isAllowedSender,
+  isValidShowcaseToken,
   protectedResourceMetadata,
   wwwAuthenticate,
   type AuthedUser,
 } from "./auth.js";
 import { sendOne, type OutgoingMessage, type SendResult } from "./email.js";
 import { fetchInlineImages } from "./images.js";
-import { assertUnderCaps, recordSend } from "./store.js";
+import { assertUnderCaps, recordAuthFailure, recordSend } from "./store.js";
 
 const app = express();
 // 30mb accommodates base64-encoded attachments; SendGrid caps total message size ~30MB.
@@ -58,7 +59,67 @@ const message = z.object({
   attachments: z.array(attachment).optional(),
   images: z.array(imageRef).optional(),
 });
-const sendEmailInput = { messages: z.array(message).min(1).max(200) };
+const messages = z.array(message).min(1).max(200);
+const sendEmailInput = { messages };
+
+type MessageInput = z.infer<typeof message>;
+type BatchResult = { to: string[]; subject: string } & SendResult;
+
+/**
+ * Send a batch as `fromEmail`: caps, server-side image inlining, SendGrid, and
+ * the audit log. Shared by the MCP tool and the showcase endpoint. Throws if the
+ * batch would exceed a cap (nothing is sent).
+ */
+async function sendBatch(
+  fromEmail: string,
+  fromName: string | undefined,
+  batch: MessageInput[]
+): Promise<BatchResult[]> {
+  assertUnderCaps(fromEmail, batch.length);
+
+  const results: BatchResult[] = [];
+  for (const m of batch) {
+    const { images, ...msg } = m;
+
+    // Fetch any URL-referenced images server-side and inline them. A fetch
+    // failure fails just this message — we don't send a half-built body.
+    let r: SendResult | undefined;
+    if (images?.length) {
+      try {
+        const fetched = await fetchInlineImages(images);
+        (msg as OutgoingMessage).attachments = [
+          ...((msg as OutgoingMessage).attachments ?? []),
+          ...fetched,
+        ];
+        (msg as OutgoingMessage).inlineImageMeta = images.map((i) => ({
+          contentId: i.contentId,
+          alt: i.alt,
+          width: i.width,
+        }));
+      } catch (err) {
+        r = { status: "error", error: err instanceof Error ? err.message : "image fetch failed" };
+      }
+    }
+    r ??= await sendOne(fromEmail, fromName, msg as OutgoingMessage);
+    recordSend({
+      ts: new Date().toISOString(),
+      senderEmail: fromEmail,
+      toEmails: m.to.map((t) => t.email),
+      subject: m.subject,
+      status: r.status,
+      sendgridId: r.sendgridId,
+      error: r.error,
+    });
+    results.push({
+      to: m.to.map((t) => t.email),
+      subject: m.subject,
+      status: r.status,
+      sendgridId: r.sendgridId,
+      error: r.error,
+    });
+  }
+  return results;
+}
 
 // Build a per-request MCP server bound to the authenticated user so the tool
 // handler can enforce `from` = the verified identity.
@@ -83,51 +144,7 @@ function buildServer(user: AuthedUser): McpServer {
       if (!isAllowedSender(user.email)) {
         throw new Error(`Sender ${user.email} is not on an approved domain.`);
       }
-      assertUnderCaps(user.email, messages.length);
-
-      const results = [];
-      for (const m of messages) {
-        const { images, ...msg } = m as typeof m & {
-          images?: { url: string; contentId: string; alt?: string; width?: number }[];
-        };
-
-        // Fetch any URL-referenced images server-side and inline them. A fetch
-        // failure fails just this message — we don't send a half-built body.
-        let r: SendResult | undefined;
-        if (images?.length) {
-          try {
-            const fetched = await fetchInlineImages(images);
-            (msg as OutgoingMessage).attachments = [
-              ...((msg as OutgoingMessage).attachments ?? []),
-              ...fetched,
-            ];
-            (msg as OutgoingMessage).inlineImageMeta = images.map((i) => ({
-              contentId: i.contentId,
-              alt: i.alt,
-              width: i.width,
-            }));
-          } catch (err) {
-            r = { status: "error", error: err instanceof Error ? err.message : "image fetch failed" };
-          }
-        }
-        r ??= await sendOne(user.email, undefined, msg as OutgoingMessage);
-        recordSend({
-          ts: new Date().toISOString(),
-          senderEmail: user.email,
-          toEmails: m.to.map((t) => t.email),
-          subject: m.subject,
-          status: r.status,
-          sendgridId: r.sendgridId,
-          error: r.error,
-        });
-        results.push({
-          to: m.to.map((t) => t.email),
-          subject: m.subject,
-          status: r.status,
-          sendgridId: r.sendgridId,
-          error: r.error,
-        });
-      }
+      const results = await sendBatch(user.email, undefined, messages);
 
       const sent = results.filter((r) => r.status === "sent").length;
       return {
@@ -165,6 +182,44 @@ app.post("/mcp", async (req, res) => {
   });
   await server.connect(transport);
   await transport.handleRequest(req, res, req.body);
+});
+
+// ── Showcase site send endpoint (static Bearer token, not Stytch) ──────────
+// The showcase runs on Cloudflare with no fixed egress IP, so it can't pass
+// SendGrid's IP allowlist. It POSTs here instead and we send from this box.
+// `from` is limited to SHOWCASE_SENDERS; everything else matches send_email.
+const showcaseInput = z.object({
+  from: z.object({ email: z.string().email(), name: z.string().optional() }).optional(),
+  messages,
+});
+
+app.post("/api/showcase/send", async (req, res) => {
+  if (!isValidShowcaseToken(req.header("authorization"))) {
+    if (config.showcase.apiToken) recordAuthFailure("showcase_token_invalid");
+    res.status(401).json({ error: "unauthorized" });
+    return;
+  }
+
+  const parsed = showcaseInput.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: "invalid_request", issues: parsed.error.issues });
+    return;
+  }
+
+  const fromEmail = (parsed.data.from?.email ?? config.showcase.senders[0] ?? "").toLowerCase();
+  if (!config.showcase.senders.includes(fromEmail) || !isAllowedSender(fromEmail)) {
+    res.status(403).json({ error: "sender_not_allowed", from: fromEmail || null });
+    return;
+  }
+
+  try {
+    const results = await sendBatch(fromEmail, parsed.data.from?.name, parsed.data.messages);
+    const sent = results.filter((r) => r.status === "sent").length;
+    res.json({ from: fromEmail, sent, total: results.length, results });
+  } catch (err) {
+    // Only assertUnderCaps throws here; per-message SendGrid errors are in results.
+    res.status(429).json({ error: err instanceof Error ? err.message : "send failed" });
+  }
 });
 
 // ── Hosted authorization/consent UI (Stytch IdentityProvider) ──────────────

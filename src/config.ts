@@ -36,4 +36,15 @@ export const config = {
     .filter(Boolean),
   maxImageBytes: Number(process.env.MAX_IMAGE_BYTES ?? 10 * 1024 * 1024),
   imageFetchTimeoutMs: Number(process.env.IMAGE_FETCH_TIMEOUT_MS ?? 10_000),
+
+  // Showcase site (Cloudflare, no fixed egress IP) sends through us instead of
+  // calling SendGrid directly. Unset token = endpoint disabled.
+  showcase: {
+    apiToken: process.env.SHOWCASE_API_TOKEN ?? "",
+    // Addresses the showcase may send as; the first is the default `from`.
+    senders: (process.env.SHOWCASE_SENDERS ?? "")
+      .split(",")
+      .map((s) => s.trim().toLowerCase())
+      .filter(Boolean),
+  },
 };
