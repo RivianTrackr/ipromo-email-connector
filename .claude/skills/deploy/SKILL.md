@@ -37,14 +37,19 @@ Deploy the iPromo email connector's **origin/main** to production.
   `main` (read-only deploy key). PM2 process `email-connector`, runs as the `deploy`
   user — never as root.
 - If `ssh ipromo-connector` fails to resolve or connects to the wrong box, the alias
-  is missing or stale. It must point at the IP above (the scripts SSH in as root and
-  `su - deploy`):
+  is missing or stale. It must point at the IP above. Login is root with Jose's SSH
+  key only (no password), then the scripts `su - deploy`:
 
   ```
   Host ipromo-connector
     HostName 172.232.20.34
     User root
+    IdentityFile ~/.ssh/<your-key>
+    IdentitiesOnly yes
   ```
+
+  Without that key on the machine running the deploy, SSH fails with
+  `Permission denied (publickey)`. Don't try to fall back to a password.
 
   DNS won't tell you the box: `connector.ipromo.com` is proxied through Cloudflare,
   so it resolves to Cloudflare addresses, not the Linode.
