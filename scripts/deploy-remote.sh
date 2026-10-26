@@ -4,14 +4,16 @@
 #
 #   ./scripts/deploy-remote.sh
 #
-# Requires the `ipromo-apps` SSH host alias (see README → Deploy). Runs
+# Requires the `ipromo-apps-deploy` SSH host alias, which logs in straight as the
+# `deploy` user (see README → Deploy), so deploys never touch root. Runs
 # deploy.sh on the box (pull → conditional npm ci → build → PM2 restart), then
 # polls the public health endpoint — a brief 502 right after restart is normal,
 # so we retry before declaring failure.
 set -euo pipefail
 
 echo "→ Deploying origin/main to connector.ipromo.com…"
-ssh ipromo-apps 'su - deploy -c "cd /home/deploy/app && ./deploy.sh"'
+# bash -l gives the same login environment (PATH for node/pm2) that su - did.
+ssh ipromo-apps-deploy 'bash -lc "cd /home/deploy/app && ./deploy.sh"'
 
 echo "→ Verifying health…"
 code=""
