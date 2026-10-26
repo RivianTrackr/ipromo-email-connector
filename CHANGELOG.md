@@ -6,6 +6,25 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 All dates are UTC; this is an internal service without tagged releases.
 
+## [0.3.1] - 2026-10-26
+
+### Security
+- **Cleared all open Dependabot alerts** (18 vulnerable packages across both lockfiles,
+  reported by GitHub as 73 alerts: 1 critical, 29 high).
+- **Backend:** `zod` 3 → 4 (memory exhaustion when validating oversized constrained
+  collections, GHSA-mrhx-c7xc-m3w5, relevant because every request body is validated with
+  zod). In-range bumps: `@modelcontextprotocol/sdk` 1.29 → 1.32, `express` 4.22.3,
+  `sharp` 0.35.5, plus transitive fixes for `proxy-addr` (critical), `body-parser`, `qs`,
+  `undici`, `axios`, `follow-redirects`, `fast-uri`, `ip-address` and `hono`.
+- **Web (consent page):** `vite` 8.1 → 8.3, plus transitive `nanoid`, `postcss` and
+  `source-map-js`.
+
+### Changed
+- No code changes for zod 4: the MCP SDK (1.32) supports it natively, and the existing
+  schemas (`.email()`, `.url()`, `.regex()`) behave the same. Validation error `issues`
+  on the showcase endpoint's `400` responses use zod 4's shape (for example
+  `code: "invalid_format"` instead of `invalid_string`).
+
 ## [0.3.0] - 2026-10-26
 
 ### Added
