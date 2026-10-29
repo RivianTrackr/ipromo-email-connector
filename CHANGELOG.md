@@ -6,6 +6,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 All dates are UTC; this is an internal service without tagged releases.
 
+## [0.4.1] - 2026-10-29
+
+### Fixed
+- **Fresh sign-ins failed with `oauth_state_mismatch`.** Since the browser SDK was pointed
+  at the project domain (`<project>.customers.stytch.dev`), the Microsoft login also
+  started there. Stytch's start endpoint sets its `state` cookie with
+  `Domain=test.stytch.com` (the host Microsoft calls back to), which the browser drops
+  when the response comes from the project domain, so the callback never found it.
+  Reconnects only worked while an older Stytch session was still alive. The login now
+  starts on Stytch's own API host (`test.stytch.com`, or `api.stytch.com` for live
+  tokens); the token exchange and consent stay on the project domain.
+
 ## [0.4.0] - 2026-10-29
 
 ### Added
