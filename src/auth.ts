@@ -122,6 +122,18 @@ export function isAllowedSender(email: string): boolean {
   return !!domain && config.allowedSenderDomains.includes(domain);
 }
 
+/**
+ * May `user` send as `fromEmail`? Their own address always; otherwise only a
+ * shared address listed in SHARED_SENDERS that names them (or "*").
+ */
+export function canSendAs(user: AuthedUser, fromEmail: string): boolean {
+  const from = fromEmail.toLowerCase();
+  if (from === user.email) return true;
+  if (!isAllowedSender(from)) return false;
+  const users = config.sharedSenders.get(from);
+  return users === "*" || (!!users && users.includes(user.email));
+}
+
 /** RFC 9728 Protected Resource Metadata — tells Claude where to authenticate. */
 export function protectedResourceMetadata() {
   return {

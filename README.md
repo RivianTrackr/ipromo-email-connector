@@ -3,7 +3,8 @@
 A Claude (Team) custom connector that lets each employee send email **as their own
 `@ipromo.com` address** through SendGrid. Identity is verified via **Stytch Connected
 Apps** (federated to Microsoft Entra); this server is a **resource server only** — it
-validates the Stytch-issued token, forces `from` = the verified identity, enforces send
+validates the Stytch-issued token, forces `from` = the verified identity (or an approved
+shared address, see below), enforces send
 caps, sends via SendGrid, and logs every message.
 
 List-building, personalization, and unsubscribe/compliance are handled upstream by the
@@ -18,6 +19,23 @@ src/
   store.ts    SQLite audit log + per-user/global daily caps
   server.ts   Express + MCP streamable-HTTP endpoint + send_email tool + showcase endpoint
 ```
+
+## Sending as a shared address
+By default every message goes out as the signed-in user. `send_email` also takes an
+optional top-level `from` for **shared addresses** listed in `SHARED_SENDERS`:
+
+```jsonc
+{ "from": { "email": "showcase@ipromo.com", "name": "iPromo" }, "messages": [ ... ] }
+```
+
+- The default list (in `src/config.ts`) is `showcase@ipromo.com`, usable by any signed-in
+  iPromo user. Override it with `SHARED_SENDERS` in `.env`, e.g.
+  `showcase@ipromo.com,sales@ipromo.com=jane@ipromo.com|sam@ipromo.com` (the second entry
+  limited to two people). Set it empty to turn shared senders off.
+- Any other `from` is refused. Shared addresses must also be on `ALLOWED_SENDER_DOMAINS`.
+- Replies go to the shared address unless the message sets `replyTo`.
+- The audit log keeps `sender_email` = the shared address and `sent_by` = the person who
+  sent it. Daily caps count against the shared address.
 
 ## Attachments & inline images
 The `send_email` tool accepts an optional `attachments` array on each message. Each entry

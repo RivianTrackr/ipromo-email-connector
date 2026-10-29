@@ -6,6 +6,19 @@ function required(name: string): string {
   return v;
 }
 
+function parseSharedSenders(raw: string): Map<string, string[] | "*"> {
+  const map = new Map<string, string[] | "*">();
+  for (const entry of raw.split(",")) {
+    const [address, users] = entry.split("=").map((p) => p.trim().toLowerCase());
+    if (!address) continue;
+    map.set(
+      address,
+      users ? users.split("|").map((u) => u.trim()).filter(Boolean) : "*"
+    );
+  }
+  return map;
+}
+
 export const config = {
   baseUrl: required("CONNECTOR_BASE_URL").replace(/\/$/, ""),
   port: Number(process.env.PORT ?? 8080),
@@ -24,6 +37,14 @@ export const config = {
     .split(",")
     .map((d) => d.trim().toLowerCase())
     .filter(Boolean),
+
+  // Shared addresses a signed-in user may pick as `from` in send_email, mapped to
+  // who may use them ("*" = any signed-in user). Format:
+  //   shared@ipromo.com              → any signed-in user
+  //   shared@ipromo.com=a@ipromo.com|b@ipromo.com → only those users
+  // Entries are comma-separated. The default ships via git; set SHARED_SENDERS
+  // only to diverge from it (set it empty to turn shared senders off).
+  sharedSenders: parseSharedSenders(process.env.SHARED_SENDERS ?? "showcase@ipromo.com"),
 
   // Server-side image fetch (the `images` param): hosts we'll pull image URLs
   // from. This allowlist is the SSRF control — keep it tight.

@@ -39,11 +39,19 @@ db.exec(`
   );
 `);
 
+// Added after launch: who actually sent when `from` was a shared address.
+// NULL means sender_email was the user's own identity (or the showcase endpoint).
+const sendLogCols = db.prepare(`PRAGMA table_info(send_log)`).all() as { name: string }[];
+if (!sendLogCols.some((c) => c.name === "sent_by")) {
+  db.exec(`ALTER TABLE send_log ADD COLUMN sent_by TEXT`);
+}
+
 const utcDay = (iso: string) => iso.slice(0, 10);
 
 export interface SendRecord {
   ts: string;
   senderEmail: string;
+  sentBy?: string; // signed-in user, when senderEmail is a shared address
   toEmails: string[];
   subject: string;
   status: "sent" | "error";
@@ -53,12 +61,13 @@ export interface SendRecord {
 
 export function recordSend(r: SendRecord): void {
   db.prepare(
-    `INSERT INTO send_log (ts, day, sender_email, to_emails, subject, status, sendgrid_id, error)
-     VALUES (@ts, @day, @sender, @to, @subject, @status, @sgid, @error)`
+    `INSERT INTO send_log (ts, day, sender_email, sent_by, to_emails, subject, status, sendgrid_id, error)
+     VALUES (@ts, @day, @sender, @sentBy, @to, @subject, @status, @sgid, @error)`
   ).run({
     ts: r.ts,
     day: utcDay(r.ts),
     sender: r.senderEmail,
+    sentBy: r.sentBy ?? null,
     to: JSON.stringify(r.toEmails),
     subject: r.subject,
     status: r.status,
