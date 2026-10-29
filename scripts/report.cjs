@@ -26,7 +26,7 @@ console.table(
 
 console.log("\n--- RECENT SENDS (last 20) ---");
 console.table(
-  q(`SELECT ts, sender_email, to_emails, subject, status, sendgrid_id, error
+  q(`SELECT ts, sender_email, sent_by, to_emails, subject, status, sendgrid_id, error
      FROM send_log ORDER BY id DESC LIMIT 20`)
 );
 

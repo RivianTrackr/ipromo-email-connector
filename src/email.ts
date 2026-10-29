@@ -115,8 +115,8 @@ export function renderImageTokens(
 }
 
 /**
- * Send one fully-rendered message. `fromEmail` is the VERIFIED identity injected
- * by the server — callers never supply `from`. Tracking (open/click) is on and
+ * Send one fully-rendered message. `fromEmail` is set by the server: the VERIFIED
+ * identity, or a shared address that identity is allowed to use. Tracking (open/click) is on and
  * uses the branded link domain configured in SendGrid (url9892.ipromo.com).
  */
 export async function sendOne(

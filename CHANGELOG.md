@@ -6,6 +6,22 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 All dates are UTC; this is an internal service without tagged releases.
 
+## [0.4.0] - 2026-10-29
+
+### Added
+- **Send as a shared address.** `send_email` takes an optional top-level `from`. Leave it
+  out to send as yourself (unchanged). Set it to a shared address listed in
+  `SHARED_SENDERS` to send as that address instead. The default list is
+  `showcase@ipromo.com`, open to any signed-in iPromo user. Any other `from` is refused,
+  and it must still be on `ALLOWED_SENDER_DOMAINS`.
+- **`sent_by` audit column.** When a message goes out as a shared address, `send_log`
+  records the signed-in user who sent it. The column is added on startup to existing
+  databases. `scripts/report.cjs` shows it in recent sends.
+
+### Changed
+- Daily caps for a shared address count against that address, so Claude sends and
+  showcase site sends as showcase@ipromo.com share one per-sender cap.
+
 ## [0.3.1] - 2026-10-26
 
 ### Security

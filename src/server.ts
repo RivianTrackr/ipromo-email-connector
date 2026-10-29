@@ -6,6 +6,7 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { config } from "./config.js";
 import {
   authenticate,
+  canSendAs,
   isAllowedSender,
   isValidShowcaseToken,
   protectedResourceMetadata,
@@ -27,7 +28,7 @@ app.get("/.well-known/oauth-protected-resource", (_req, res) => {
 
 app.get("/healthz", (_req, res) => res.json({ ok: true }));
 
-// ── Tool schema (the "dumb" send surface; no `from` accepted) ──────────────
+// ── Tool schema (the "dumb" send surface; `from` only from an allowlist) ───
 const contact = z.object({ email: z.string().email(), name: z.string().optional() });
 const attachment = z.object({
   content: z.string().min(1).describe("Base64-encoded file contents."),
@@ -60,7 +61,15 @@ const message = z.object({
   images: z.array(imageRef).optional(),
 });
 const messages = z.array(message).min(1).max(200);
-const sendEmailInput = { messages };
+const sendEmailInput = {
+  from: contact
+    .optional()
+    .describe(
+      "Optional. Omit to send as yourself. Set only to send as an approved shared " +
+        "address (e.g. showcase@ipromo.com); anything else is refused."
+    ),
+  messages,
+};
 
 type MessageInput = z.infer<typeof message>;
 type BatchResult = { to: string[]; subject: string } & SendResult;
@@ -73,7 +82,8 @@ type BatchResult = { to: string[]; subject: string } & SendResult;
 async function sendBatch(
   fromEmail: string,
   fromName: string | undefined,
-  batch: MessageInput[]
+  batch: MessageInput[],
+  sentBy?: string
 ): Promise<BatchResult[]> {
   assertUnderCaps(fromEmail, batch.length);
 
@@ -104,6 +114,7 @@ async function sendBatch(
     recordSend({
       ts: new Date().toISOString(),
       senderEmail: fromEmail,
+      sentBy,
       toEmails: m.to.map((t) => t.email),
       subject: m.subject,
       status: r.status,
@@ -122,14 +133,16 @@ async function sendBatch(
 }
 
 // Build a per-request MCP server bound to the authenticated user so the tool
-// handler can enforce `from` = the verified identity.
+// handler can enforce `from` = the verified identity (or a shared address
+// SHARED_SENDERS lets them use).
 function buildServer(user: AuthedUser): McpServer {
   const server = new McpServer({ name: "ipromo-email-connector", version: "0.1.0" });
 
   server.tool(
     "send_email",
     "Send one or more fully-rendered emails from your own verified iPromo address. " +
-      "Do not include a 'from' — it is set automatically to your identity. " +
+      "Leave out 'from' to send as yourself (the normal case). Set 'from' only to send " +
+      "as an approved shared address such as showcase@ipromo.com; other addresses are refused. " +
       "Files (PDFs, images, etc.) go in 'attachments' with base64 'content'. " +
       "To embed an image inline, add it as an attachment with disposition:'inline' and a " +
       "'contentId', then reference it in the HTML as <img src=\"cid:THAT_ID\">. " +
@@ -140,18 +153,28 @@ function buildServer(user: AuthedUser): McpServer {
       "server fetches each and inlines it; place them with the same [[IMG:contentId]] token. " +
       "The caller is responsible for unsubscribe links and list compliance.",
     sendEmailInput,
-    async ({ messages }) => {
+    async ({ from, messages }) => {
       if (!isAllowedSender(user.email)) {
         throw new Error(`Sender ${user.email} is not on an approved domain.`);
       }
-      const results = await sendBatch(user.email, undefined, messages);
+      const fromEmail = (from?.email ?? user.email).toLowerCase();
+      if (!canSendAs(user, fromEmail)) {
+        throw new Error(`You can't send as ${fromEmail}. Leave out 'from' to send as yourself.`);
+      }
+      const shared = fromEmail !== user.email;
+      const results = await sendBatch(
+        fromEmail,
+        from?.name,
+        messages,
+        shared ? user.email : undefined
+      );
 
       const sent = results.filter((r) => r.status === "sent").length;
       return {
         content: [
           {
             type: "text",
-            text: `Sent ${sent}/${results.length} as ${user.email}.\n${JSON.stringify(
+            text: `Sent ${sent}/${results.length} as ${fromEmail}.\n${JSON.stringify(
               results,
               null,
               2
