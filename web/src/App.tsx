@@ -5,6 +5,14 @@ const ORIGIN = window.location.origin;
 const SESSION_MINUTES = 60;
 const RETURN_KEY = "ipromo_return_to";
 
+// Stytch's own API host for this token's environment: where the Microsoft login
+// has to start. See startMicrosoftLogin.
+const STYTCH_OAUTH_HOST = import.meta.env.VITE_STYTCH_PUBLIC_TOKEN?.startsWith(
+  "public-token-test-"
+)
+  ? "test.stytch.com"
+  : "api.stytch.com";
+
 // A branded, centered status screen with a spinner so the transition states never
 // look blank or stuck — and reassure the user that Claude will reopen on its own.
 function StatusCard({ title, message }: { title: string; message: string }) {
@@ -66,6 +74,26 @@ function emailFromAccessToken(accessToken: unknown): string {
   }
 }
 
+// Start the Microsoft login on Stytch's own API host, not the project domain the
+// SDK is pointed at (main.tsx). Stytch's /oauth/microsoft/start sets its `state`
+// cookie with Domain=test.stytch.com (where Microsoft calls back) even when served
+// from <project>.customers.stytch.dev, so the browser drops it and every fresh
+// login ends in oauth_state_mismatch. Starting on the callback's own host keeps
+// the cookie. Everything else (token exchange, consent) stays on the project domain.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function startMicrosoftLogin(stytch: any) {
+  const oauth = stytch.oauth;
+  const navigate = oauth.navigate.bind(oauth); // the SDK's public redirect hook
+  oauth.navigate = (url: URL) => {
+    url.host = STYTCH_OAUTH_HOST;
+    navigate(url);
+  };
+  oauth.microsoft.start({
+    login_redirect_url: `${ORIGIN}/authenticate`,
+    signup_redirect_url: `${ORIGIN}/authenticate`,
+  });
+}
+
 function AuthenticatePage() {
   const stytch = useStytch();
   const { user, isInitialized } = useStytchUser();
@@ -101,10 +129,7 @@ function AuthenticatePage() {
           setError(type + (err?.error_message ?? err?.message ?? JSON.stringify(err)));
         });
     } else {
-      stytch.oauth.microsoft.start({
-        login_redirect_url: `${ORIGIN}/authenticate`,
-        signup_redirect_url: `${ORIGIN}/authenticate`,
-      });
+      startMicrosoftLogin(stytch);
     }
   }, [stytch, user, isInitialized, token]);
 
