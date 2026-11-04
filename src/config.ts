@@ -31,6 +31,11 @@ export const config = {
 
   sendgridApiKey: required("SENDGRID_API_KEY"),
 
+  // SendGrid open + click tracking. OFF by default: the tracking pixel and
+  // redirect-wrapped links are classic bulk-mail traits that push mail into
+  // Gmail's Promotions tab. Set EMAIL_TRACKING=on only if you need the stats.
+  emailTracking: /^(on|true|1|yes)$/i.test(process.env.EMAIL_TRACKING ?? ""),
+
   perUserDailyCap: Number(process.env.PER_USER_DAILY_CAP ?? 10000),
   globalDailyCap: Number(process.env.GLOBAL_DAILY_CAP ?? 50000),
   allowedSenderDomains: (process.env.ALLOWED_SENDER_DOMAINS ?? "ipromo.com")
@@ -63,6 +68,8 @@ export const config = {
   showcase: {
     apiToken: process.env.SHOWCASE_API_TOKEN ?? "",
     // Addresses the showcase may send as; the first is the default `from`.
+    // An entry "*@ipromo.com" lets the site send as any address on that domain
+    // (so mail can come from the rep's own address); see showcaseMaySendAs().
     senders: (process.env.SHOWCASE_SENDERS ?? "")
       .split(",")
       .map((s) => s.trim().toLowerCase())

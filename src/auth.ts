@@ -134,6 +134,19 @@ export function canSendAs(user: AuthedUser, fromEmail: string): boolean {
   return users === "*" || (!!users && users.includes(user.email));
 }
 
+/**
+ * May the showcase site send as `fromEmail`? Exact entries in SHOWCASE_SENDERS
+ * match one address; a "*@domain" entry matches any address on that domain, so
+ * the site can send from the rep's own mailbox. Always also bound by
+ * ALLOWED_SENDER_DOMAINS.
+ */
+export function showcaseMaySendAs(fromEmail: string): boolean {
+  const from = fromEmail.toLowerCase();
+  if (!from || !isAllowedSender(from)) return false;
+  const domain = from.split("@")[1];
+  return config.showcase.senders.some((s) => s === from || s === `*@${domain}`);
+}
+
 /** RFC 9728 Protected Resource Metadata — tells Claude where to authenticate. */
 export function protectedResourceMetadata() {
   return {

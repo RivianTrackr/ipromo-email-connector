@@ -10,6 +10,7 @@ import {
   isAllowedSender,
   isValidShowcaseToken,
   protectedResourceMetadata,
+  showcaseMaySendAs,
   wwwAuthenticate,
   type AuthedUser,
 } from "./auth.js";
@@ -229,8 +230,10 @@ app.post("/api/showcase/send", async (req, res) => {
     return;
   }
 
-  const fromEmail = (parsed.data.from?.email ?? config.showcase.senders[0] ?? "").toLowerCase();
-  if (!config.showcase.senders.includes(fromEmail) || !isAllowedSender(fromEmail)) {
+  // Default `from` = the first exact (non-wildcard) SHOWCASE_SENDERS entry.
+  const defaultFrom = config.showcase.senders.find((s) => !s.startsWith("*@")) ?? "";
+  const fromEmail = (parsed.data.from?.email ?? defaultFrom).toLowerCase();
+  if (!showcaseMaySendAs(fromEmail)) {
     res.status(403).json({ error: "sender_not_allowed", from: fromEmail || null });
     return;
   }

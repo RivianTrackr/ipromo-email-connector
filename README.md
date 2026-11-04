@@ -128,11 +128,34 @@ Content-Type: application/json
 
 - **Auth:** a static Bearer token (`SHOWCASE_API_TOKEN`), not Stytch. Call it from the site's
   server side only, never from the browser. Unset token = endpoint closed.
-- **`from`:** must be one of `SHOWCASE_SENDERS` (and on `ALLOWED_SENDER_DOMAINS`). Omit it to
-  use the first listed address. `replyTo` per message works as in `send_email`.
+- **`from`:** must be one of `SHOWCASE_SENDERS` (and on `ALLOWED_SENDER_DOMAINS`); a
+  `*@ipromo.com` entry allows any ipromo.com address, so the site can send as the rep. Omit
+  it to use the first exact (non-wildcard) address listed. `replyTo` per message works as in `send_email`.
 - **`messages`:** exactly the `send_email` message shape, so attachments, `[[IMG:…]]` tokens
   and the `images` URL fetch all work. Up to 200 per request.
 - Same daily caps (counted against the `from` address) and the same audit log.
+
+### Keeping showcase mail out of Gmail's Promotions tab
+Gmail sorts by what a message looks like, and the connector now strips the bulk-mail
+traits it controls: **no open pixel, no click-tracking redirects** (links stay as written),
+**no SendGrid unsubscribe footer / `List-Unsubscribe`**, no Google Analytics link tags, and
+**always a plain-text part** (derived from the HTML if `text` isn't sent). Set
+`EMAIL_TRACKING=on` only if you really need open/click stats; it brings those traits back.
+
+The rest is up to the site, and it matters as much:
+- **Send from the rep, not `showcase@`.** Put the rep's own address and name in `from`
+  (`{ "email": "jane@ipromo.com", "name": "Jane Smith" }`). The server allows this only when
+  `SHOWCASE_SENDERS` contains `*@ipromo.com` (any ipromo.com address) or that rep's exact
+  address. Replies then land in the rep's own Outlook.
+- **Write it like a person:** "Hi Pam," greeting, a few short sentences, the rep's plain
+  signature. No banner, logo header, footer of social icons or "View in browser".
+- **One link** (the showcase page), maybe the rep's email. Few or no images: at most a
+  couple of small product shots, never a hero banner.
+- **Plain subject:** "Pam, the caps and totes we talked about", not "Exclusive offer! 20%
+  off swag 🎉". Avoid words like free, offer, deal, sale, % off, limited time, and emoji.
+
+Nobody controls Gmail's tabs completely. When a recipient drags a message to Primary (or
+replies), Gmail learns that sender is personal for them.
 
 | Status | Meaning |
 | --- | --- |

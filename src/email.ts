@@ -1,5 +1,6 @@
 import sgMail from "@sendgrid/mail";
 import { config } from "./config.js";
+import { htmlToText } from "./text.js";
 
 sgMail.setApiKey(config.sendgridApiKey);
 
@@ -116,8 +117,16 @@ export function renderImageTokens(
 
 /**
  * Send one fully-rendered message. `fromEmail` is set by the server: the VERIFIED
- * identity, or a shared address that identity is allowed to use. Tracking (open/click) is on and
- * uses the branded link domain configured in SendGrid (url9892.ipromo.com).
+ * identity, or a shared address that identity is allowed to use.
+ *
+ * The message is sent to look like person-to-person mail, because that's what it
+ * is, and because Gmail files mail with marketing traits into Promotions:
+ * - open tracking (a 1x1 pixel) and click tracking (every link rewritten through
+ *   url9892.ipromo.com) are OFF unless EMAIL_TRACKING=on;
+ * - subscription tracking (SendGrid's unsubscribe footer + List-Unsubscribe) and
+ *   Google Analytics link tagging are explicitly off, whatever the account default;
+ * - a text/plain alternative is always included (derived from the HTML when the
+ *   caller doesn't pass `text`).
  */
 export async function sendOne(
   fromEmail: string,
@@ -136,8 +145,9 @@ export async function sendOne(
         },
       ],
       subject: msg.subject,
+      // SendGrid needs text before html in `content`; the SDK orders them for us.
+      text: msg.text?.trim() ? msg.text : htmlToText(msg.html) || " ",
       html: renderImageTokens(msg.html, msg.attachments, msg.inlineImageMeta),
-      ...(msg.text ? { text: msg.text } : {}),
       ...(msg.attachments && msg.attachments.length
         ? {
             attachments: msg.attachments.map((a) => ({
@@ -151,8 +161,10 @@ export async function sendOne(
           }
         : {}),
       trackingSettings: {
-        clickTracking: { enable: true, enableText: false },
-        openTracking: { enable: true },
+        clickTracking: { enable: config.emailTracking, enableText: false },
+        openTracking: { enable: config.emailTracking },
+        subscriptionTracking: { enable: false },
+        ganalytics: { enable: false },
       },
     });
     return { status: "sent", sendgridId: res.headers["x-message-id"] as string | undefined };

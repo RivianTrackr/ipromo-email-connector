@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 All dates are UTC; this is an internal service without tagged releases.
 
+## [0.5.0] - 2026-11-04
+
+### Changed
+- **Mail now looks like 1:1 mail, to keep it out of Gmail's Promotions tab.** SendGrid open
+  tracking (1x1 pixel) and click tracking (links rewritten through url9892.ipromo.com) are
+  off by default; set `EMAIL_TRACKING=on` to bring them back. Subscription tracking
+  (unsubscribe footer and `List-Unsubscribe`) and Google Analytics link tagging are now
+  explicitly off whatever the SendGrid account defaults are. Applies to `send_email` and
+  the showcase endpoint.
+- **Every message has a plain-text part.** When the caller doesn't send `text`, one is
+  derived from the HTML (`src/text.ts`).
+
+### Added
+- **Showcase can send as the rep.** A `*@domain` entry in `SHOWCASE_SENDERS` (e.g.
+  `*@ipromo.com`) lets the showcase site send as any address on that domain, still bound by
+  `ALLOWED_SENDER_DOMAINS`. Default `from` is the first exact address in the list.
+
 ## [0.4.1] - 2026-10-29
 
 ### Fixed
