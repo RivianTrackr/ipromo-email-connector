@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 All dates are UTC; this is an internal service without tagged releases.
 
+## [0.5.1] - 2026-11-16
+
+### Changed
+- **Two more image hosts are allowed by default:** `51122294.fs1.hubspotusercontent-na1.net`
+  (HubSpot file manager, portal 51122294) and `showcase.ipromo.com`. An `ALLOWED_IMAGE_HOSTS`
+  line in `.env` still replaces the default list, so it must list these too or be removed.
+
 ## [0.5.0] - 2026-11-04
 
 ### Changed

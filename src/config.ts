@@ -55,7 +55,7 @@ export const config = {
   // from. This allowlist is the SSRF control — keep it tight.
   allowedImageHosts: (
     process.env.ALLOWED_IMAGE_HOSTS ??
-    "merchai-onboarding.s3.us-east-2.amazonaws.com,media.asicentral.com"
+    "merchai-onboarding.s3.us-east-2.amazonaws.com,media.asicentral.com,51122294.fs1.hubspotusercontent-na1.net,showcase.ipromo.com"
   )
     .split(",")
     .map((h) => h.trim().toLowerCase())
