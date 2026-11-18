@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 All dates are UTC; this is an internal service without tagged releases.
 
+## [0.6.0] - 2026-11-18
+
+### Added
+- **Send as a rep** for users on `REP_SEND_AS_USERS` (Leo). Three new tools appear only
+  for those users: `list_reps`, `send_as_rep` and `rep_send_log`.
+  - Mail goes out through Microsoft Graph from the rep's own mailbox, so recipients see only
+    the rep (no "on behalf of"), a copy lands in the rep's Sent Items, and replies go to the rep.
+  - Reps are the enabled members of the M365 group `REPS_GROUP_ID`. The list syncs on start and
+    every `REPS_SYNC_HOURS` (24), and every send re-checks the rep live, so leavers drop out
+    once they're disabled or removed from the group.
+  - The rep's signature is built from their M365 profile (name, title, phone) with the
+    signature-builder template and added to the end of each message (`signature:false` skips it).
+  - Each send is logged as an Email activity on the matching HubSpot contact, owned by the rep
+    (`HUBSPOT_TOKEN`; skipped when no contact matches). `send_log` gains `via`,
+    `hubspot_status` and `hubspot_id` columns.
+- Everything else is unchanged: `send_email` and the showcase endpoint still use SendGrid.
+
 ## [0.5.1] - 2026-11-16
 
 ### Changed

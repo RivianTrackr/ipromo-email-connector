@@ -14,9 +14,18 @@ import {
   wwwAuthenticate,
   type AuthedUser,
 } from "./auth.js";
-import { sendOne, type OutgoingMessage, type SendResult } from "./email.js";
+import { renderImageTokens, sendOne, type OutgoingMessage, type SendResult } from "./email.js";
 import { fetchInlineImages } from "./images.js";
-import { assertUnderCaps, recordAuthFailure, recordSend } from "./store.js";
+import { sendMailAs } from "./graph.js";
+import { hubspotConfigured, logToHubspot } from "./hubspot.js";
+import { maySendAsReps, repList, resolveRep, startRepSync } from "./reps.js";
+import { appendSignature, signatureHtml } from "./signature.js";
+import {
+  assertUnderCaps,
+  listRepSends,
+  recordAuthFailure,
+  recordSend,
+} from "./store.js";
 
 const app = express();
 // 30mb accommodates base64-encoded attachments; SendGrid caps total message size ~30MB.
@@ -136,6 +145,177 @@ async function sendBatch(
 // Build a per-request MCP server bound to the authenticated user so the tool
 // handler can enforce `from` = the verified identity (or a shared address
 // SHARED_SENDERS lets them use).
+
+// ── Send as a rep (Microsoft Graph) ────────────────────────────────────────
+// Only for users on REP_SEND_AS_USERS. Mail goes out from the rep's own mailbox
+// (From = the rep, no "on behalf of"), a copy is saved to their Sent Items,
+// replies go to the rep, the rep's signature is appended, and each send is
+// logged on the matching HubSpot contact with the rep as owner.
+
+// Exchange allows ~30 messages a minute per mailbox; keep one call under that.
+const REP_BATCH_MAX = 30;
+const repMessage = message.extend({
+  signature: z
+    .boolean()
+    .optional()
+    .describe("Append the rep's signature (default true). Set false if the HTML already has one."),
+});
+const sendAsRepInput = {
+  rep: z.string().email().describe("The rep's @ipromo.com address. See list_reps."),
+  messages: z.array(repMessage).min(1).max(REP_BATCH_MAX),
+};
+
+type RepBatchResult = BatchResult & { hubspot?: string };
+
+async function sendAsRepBatch(
+  repEmail: string,
+  batch: z.infer<typeof repMessage>[],
+  sentBy: string
+): Promise<{ rep: string; results: RepBatchResult[] }> {
+  const rep = await resolveRep(repEmail);
+  if (!isAllowedSender(rep.email)) throw new Error(`${rep.email} is not on an approved domain.`);
+  assertUnderCaps(rep.email, batch.length);
+  const sig = signatureHtml(rep);
+
+  const results: RepBatchResult[] = [];
+  for (const m of batch) {
+    const { images, signature, ...rest } = m;
+    const msg = rest as OutgoingMessage;
+    let r: SendResult;
+    let html = msg.html;
+    let hubspot: { status: string; id?: string } | undefined;
+    try {
+      if (images?.length) {
+        msg.attachments = [...(msg.attachments ?? []), ...(await fetchInlineImages(images))];
+        msg.inlineImageMeta = images.map((i) => ({ contentId: i.contentId, alt: i.alt, width: i.width }));
+      }
+      html = renderImageTokens(msg.html, msg.attachments, msg.inlineImageMeta);
+      if (signature !== false) html = appendSignature(html, sig);
+      await sendMailAs(rep.email, {
+        to: msg.to,
+        cc: msg.cc,
+        bcc: msg.bcc,
+        replyTo: msg.replyTo ?? { email: rep.email, name: rep.name },
+        subject: msg.subject,
+        html,
+        attachments: msg.attachments,
+      });
+      r = { status: "sent" };
+    } catch (err) {
+      r = { status: "error", error: err instanceof Error ? err.message : "send failed" };
+    }
+
+    const ts = new Date().toISOString();
+    if (r.status === "sent" && hubspotConfigured()) {
+      const h = await logToHubspot({
+        rep: { email: rep.email, name: rep.name },
+        to: msg.to,
+        cc: msg.cc,
+        subject: msg.subject,
+        html,
+        sentAt: ts,
+      });
+      hubspot =
+        h.status === "logged"
+          ? { status: "logged", id: h.emailId }
+          : h.status === "error"
+            ? { status: `error: ${h.error}` }
+            : { status: "no_contact" };
+    }
+    recordSend({
+      ts,
+      senderEmail: rep.email,
+      sentBy,
+      toEmails: m.to.map((t) => t.email),
+      subject: m.subject,
+      status: r.status,
+      error: r.error,
+      via: "graph",
+      hubspotStatus: hubspot?.status.startsWith("error") ? "error" : hubspot?.status,
+      hubspotId: hubspot?.id,
+    });
+    results.push({
+      to: m.to.map((t) => t.email),
+      subject: m.subject,
+      status: r.status,
+      error: r.error,
+      ...(hubspot ? { hubspot: hubspot.status } : {}),
+    });
+  }
+  return { rep: rep.email, results };
+}
+
+function registerRepTools(server: McpServer, user: AuthedUser): void {
+  server.tool(
+    "list_reps",
+    "List the active sales reps you can send as with send_as_rep (name, title, email). " +
+      "The list comes from the Microsoft 365 reps group; people who leave drop off automatically.",
+    {},
+    async () => {
+      const { reps, lastSync, lastError } = repList();
+      return {
+        content: [
+          {
+            type: "text",
+            text: JSON.stringify(
+              {
+                reps: reps.map((r) => ({ name: r.name, title: r.title ?? null, email: r.email })),
+                lastSync,
+                ...(lastError ? { lastError } : {}),
+              },
+              null,
+              2
+            ),
+          },
+        ],
+      };
+    }
+  );
+
+  server.tool(
+    "send_as_rep",
+    "Send one or more fully-rendered emails AS a sales rep, from the rep's own Microsoft 365 " +
+      "mailbox. Recipients see only the rep (no 'on behalf of'); a copy lands in the rep's Sent " +
+      "Items, replies go to the rep, the rep's signature is added at the end (set signature:false " +
+      "to skip), and each send is logged on the matching HubSpot contact. Always show the user the " +
+      "exact rep, recipients, subject and body and get their OK before calling this. Up to " +
+      `${REP_BATCH_MAX} messages per call; each message (with attachments and images) must stay ` +
+      "under about 3.5 MB. Images, attachments and [[IMG:id]] tokens work as in send_email.",
+    sendAsRepInput,
+    async ({ rep, messages }) => {
+      const out = await sendAsRepBatch(rep, messages, user.email);
+      const sent = out.results.filter((r) => r.status === "sent").length;
+      return {
+        content: [
+          {
+            type: "text",
+            text: `Sent ${sent}/${out.results.length} as ${out.rep}.\n${JSON.stringify(out.results, null, 2)}`,
+          },
+        ],
+      };
+    }
+  );
+
+  server.tool(
+    "rep_send_log",
+    "What went out as which rep: sends made with send_as_rep, newest first. Filter by rep " +
+      "and/or an ISO date to start from.",
+    {
+      rep: z.string().email().optional(),
+      since: z.string().optional().describe("ISO date or timestamp, e.g. 2026-11-01"),
+      limit: z.number().int().min(1).max(500).optional(),
+    },
+    async ({ rep, since, limit }) => ({
+      content: [
+        {
+          type: "text",
+          text: JSON.stringify(listRepSends({ rep, since, limit: limit ?? 100 }), null, 2),
+        },
+      ],
+    })
+  );
+}
+
 function buildServer(user: AuthedUser): McpServer {
   const server = new McpServer({ name: "ipromo-email-connector", version: "0.1.0" });
 
@@ -256,6 +436,8 @@ app.use(express.static(webDist));
 for (const spaRoute of ["/authorize", "/login", "/authenticate"]) {
   app.get(spaRoute, (_req, res) => res.sendFile(path.join(webDist, "index.html")));
 }
+
+startRepSync();
 
 app.listen(config.port, () => {
   console.log(`iPromo email connector listening on :${config.port}`);
