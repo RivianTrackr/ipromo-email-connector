@@ -63,6 +63,35 @@ export const config = {
   maxImageBytes: Number(process.env.MAX_IMAGE_BYTES ?? 10 * 1024 * 1024),
   imageFetchTimeoutMs: Number(process.env.IMAGE_FETCH_TIMEOUT_MS ?? 10_000),
 
+  // ── Send as a rep (Microsoft Graph) ─────────────────────────────────────
+  // App-only credentials for the separate "iPromo Email Connector Mailer" app
+  // registration (NOT the Stytch sign-in app, NOT "iPromo Portal SSO"). Needs
+  // Application permissions Mail.Send, User.Read.All, GroupMember.Read.All, with
+  // Mail.Send limited to the reps group by an Exchange application access policy.
+  // Any of these unset = rep sending is off.
+  graph: {
+    tenantId: process.env.GRAPH_TENANT_ID ?? "",
+    clientId: process.env.GRAPH_CLIENT_ID ?? "",
+    clientSecret: process.env.GRAPH_CLIENT_SECRET ?? "",
+  },
+  reps: {
+    // Object id of the M365 security group "Email connector reps". Only enabled
+    // members can be sent as; leavers drop out when disabled/removed.
+    groupId: process.env.REPS_GROUP_ID ?? "",
+    // Signed-in users who may send as reps (comma-separated). Leo only.
+    sendAsUsers: (process.env.REP_SEND_AS_USERS ?? "")
+      .split(",")
+      .map((u) => u.trim().toLowerCase())
+      .filter(Boolean),
+    // Hours between full syncs of the reps list (each send also re-checks live).
+    syncHours: Number(process.env.REPS_SYNC_HOURS ?? 24),
+  },
+
+  // HubSpot private app token (scopes: crm.objects.contacts.read,
+  // crm.objects.contacts.write, crm.objects.owners.read, sales-email-read).
+  // Unset = rep sends are not logged to HubSpot.
+  hubspotToken: process.env.HUBSPOT_TOKEN ?? "",
+
   // Showcase site (Cloudflare, no fixed egress IP) sends through us instead of
   // calling SendGrid directly. Unset token = endpoint disabled.
   showcase: {

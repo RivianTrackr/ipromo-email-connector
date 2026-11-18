@@ -17,6 +17,10 @@ src/
   auth.ts     Stytch token validation + Protected Resource Metadata  ← verify the email-claim TODO
   email.ts    SendGrid send (from = verified identity, tracking on)
   store.ts    SQLite audit log + per-user/global daily caps
+  graph.ts    Microsoft Graph (app-only): reps lookup + sendMail as the rep
+  reps.ts     active reps list (group sync + live check)
+  signature.ts rep signature from the M365 profile
+  hubspot.ts  log rep sends on HubSpot contacts
   server.ts   Express + MCP streamable-HTTP endpoint + send_email tool + showcase endpoint
 ```
 
@@ -36,6 +40,33 @@ optional top-level `from` for **shared addresses** listed in `SHARED_SENDERS`:
 - Replies go to the shared address unless the message sets `replyTo`.
 - The audit log keeps `sender_email` = the shared address and `sent_by` = the person who
   sent it. Daily caps count against the shared address.
+
+## Sending as a rep (Microsoft 365)
+For users on `REP_SEND_AS_USERS` only, three more tools show up: `list_reps`,
+`send_as_rep` and `rep_send_log`. Everyone else sees only `send_email`.
+
+- `send_as_rep` sends through **Microsoft Graph from the rep's own mailbox**: From is the rep
+  with no "on behalf of", a copy is saved to the rep's **Sent Items**, and **replies go to the
+  rep**. It takes the same message fields as `send_email` (attachments, `images`,
+  `[[IMG:id]]` tokens) plus `signature` (default true). Up to 30 messages per call (Exchange's
+  per-mailbox rate), and each message must stay under about 3.5 MB including attachments
+  (Graph's 4 MB request limit).
+- **Who counts as a rep:** enabled members of the mail-enabled security group `REPS_GROUP_ID`
+  ("Email connector reps"). The list syncs on start and every `REPS_SYNC_HOURS`, and each send
+  re-checks the rep live, so a leaver can't be sent as once their account is disabled or they're
+  removed from the group. Mail.Send is also limited to that group in Exchange (application
+  access policy), so the app can't send as anyone else even if the code were wrong.
+- **Signatures** are built from the rep's M365 profile (display name, job title, mobile or
+  business phone, email) with the same template as the signature builder
+  ([`src/signature.ts`](src/signature.ts)). Outlook signatures themselves can't be read through
+  Graph, so keep job titles and phones current in Entra.
+- **HubSpot:** each sent message is logged as an Email activity on every matching contact
+  (to + cc), owned by the rep's HubSpot user. No matching contact = not logged (contacts are
+  never created). Needs `HUBSPOT_TOKEN`.
+- **Send log:** `rep_send_log` returns what went out as which rep, who sent it, and the HubSpot
+  result. The same rows are in `send_log` with `via = 'graph'`.
+- **Approval:** set `send_as_rep` to "Needs approval" in Claude's connector settings so every
+  send is confirmed first. The tool description also tells Claude to show the message first.
 
 ## Attachments & inline images
 The `send_email` tool accepts an optional `attachments` array on each message. Each entry

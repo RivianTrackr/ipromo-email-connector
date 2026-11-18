@@ -46,6 +46,15 @@ if (!sendLogCols.some((c) => c.name === "sent_by")) {
   db.exec(`ALTER TABLE send_log ADD COLUMN sent_by TEXT`);
 }
 
+// Added for rep sending: how it went out, and the HubSpot logging result.
+for (const [col, type] of [
+  ["via", "TEXT"], // 'sendgrid' (NULL on older rows) | 'graph'
+  ["hubspot_status", "TEXT"], // logged | no_contact | error | NULL (not attempted)
+  ["hubspot_id", "TEXT"],
+] as const) {
+  if (!sendLogCols.some((c) => c.name === col)) db.exec(`ALTER TABLE send_log ADD COLUMN ${col} ${type}`);
+}
+
 const utcDay = (iso: string) => iso.slice(0, 10);
 
 export interface SendRecord {
@@ -57,12 +66,15 @@ export interface SendRecord {
   status: "sent" | "error";
   sendgridId?: string;
   error?: string;
+  via?: "sendgrid" | "graph";
+  hubspotStatus?: string;
+  hubspotId?: string;
 }
 
 export function recordSend(r: SendRecord): void {
   db.prepare(
-    `INSERT INTO send_log (ts, day, sender_email, sent_by, to_emails, subject, status, sendgrid_id, error)
-     VALUES (@ts, @day, @sender, @sentBy, @to, @subject, @status, @sgid, @error)`
+    `INSERT INTO send_log (ts, day, sender_email, sent_by, to_emails, subject, status, sendgrid_id, error, via, hubspot_status, hubspot_id)
+     VALUES (@ts, @day, @sender, @sentBy, @to, @subject, @status, @sgid, @error, @via, @hsStatus, @hsId)`
   ).run({
     ts: r.ts,
     day: utcDay(r.ts),
@@ -73,7 +85,60 @@ export function recordSend(r: SendRecord): void {
     status: r.status,
     sgid: r.sendgridId ?? null,
     error: r.error ?? null,
+    via: r.via ?? "sendgrid",
+    hsStatus: r.hubspotStatus ?? null,
+    hsId: r.hubspotId ?? null,
   });
+}
+
+export interface RepSendRow {
+  ts: string;
+  rep: string;
+  sent_by: string;
+  to: string[];
+  subject: string;
+  status: string;
+  error: string | null;
+  hubspot: string | null;
+}
+
+/** Rep sends (via Graph), newest first, for the rep_send_log tool. */
+export function listRepSends(opts: { rep?: string; since?: string; limit: number }): RepSendRow[] {
+  const where = [`via = 'graph'`];
+  const args: Record<string, string | number> = { limit: opts.limit };
+  if (opts.rep) {
+    where.push(`sender_email = @rep`);
+    args.rep = opts.rep.toLowerCase();
+  }
+  if (opts.since) {
+    where.push(`ts >= @since`);
+    args.since = opts.since;
+  }
+  const rows = db
+    .prepare(
+      `SELECT ts, sender_email, sent_by, to_emails, subject, status, error, hubspot_status
+       FROM send_log WHERE ${where.join(" AND ")} ORDER BY id DESC LIMIT @limit`
+    )
+    .all(args) as {
+    ts: string;
+    sender_email: string;
+    sent_by: string;
+    to_emails: string;
+    subject: string;
+    status: string;
+    error: string | null;
+    hubspot_status: string | null;
+  }[];
+  return rows.map((r) => ({
+    ts: r.ts,
+    rep: r.sender_email,
+    sent_by: r.sent_by,
+    to: JSON.parse(r.to_emails) as string[],
+    subject: r.subject,
+    status: r.status,
+    error: r.error,
+    hubspot: r.hubspot_status,
+  }));
 }
 
 // Count successful sends today for cap enforcement (UTC day).
