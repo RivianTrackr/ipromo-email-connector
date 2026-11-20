@@ -8,9 +8,9 @@ import {
   authenticate,
   canSendAs,
   isAllowedSender,
-  isValidShowcaseToken,
   protectedResourceMetadata,
-  showcaseMaySendAs,
+  siteForToken,
+  siteMaySendAs,
   wwwAuthenticate,
   type AuthedUser,
 } from "./auth.js";
@@ -388,45 +388,55 @@ app.post("/mcp", async (req, res) => {
   await transport.handleRequest(req, res, req.body);
 });
 
-// ── Showcase site send endpoint (static Bearer token, not Stytch) ──────────
-// The showcase runs on Cloudflare with no fixed egress IP, so it can't pass
-// SendGrid's IP allowlist. It POSTs here instead and we send from this box.
-// `from` is limited to SHOWCASE_SENDERS; everything else matches send_email.
-const showcaseInput = z.object({
+// ── Site send endpoint (per-site static Bearer token, not Stytch) ────────
+// Sites on Cloudflare (showcase, Cyber Week, ...) have no fixed egress IP, so
+// they can't pass SendGrid's IP allowlist. They POST here instead and we send
+// from this box. The token picks the site; `from` is limited to that site's
+// senders; everything else matches send_email. /api/showcase/send is the
+// original path and stays; /api/site/send is the same endpoint.
+const siteInput = z.object({
   from: z.object({ email: z.string().email(), name: z.string().optional() }).optional(),
   messages,
 });
 
-app.post("/api/showcase/send", async (req, res) => {
-  if (!isValidShowcaseToken(req.header("authorization"))) {
-    if (config.showcase.apiToken) recordAuthFailure("showcase_token_invalid");
+const siteSend: express.RequestHandler = async (req, res) => {
+  const site = siteForToken(req.header("authorization"));
+  if (!site) {
+    if (config.sites.length) recordAuthFailure("site_token_invalid");
     res.status(401).json({ error: "unauthorized" });
     return;
   }
 
-  const parsed = showcaseInput.safeParse(req.body);
+  const parsed = siteInput.safeParse(req.body);
   if (!parsed.success) {
     res.status(400).json({ error: "invalid_request", issues: parsed.error.issues });
     return;
   }
 
-  // Default `from` = the first exact (non-wildcard) SHOWCASE_SENDERS entry.
-  const defaultFrom = config.showcase.senders.find((s) => !s.startsWith("*@")) ?? "";
+  // Default `from` = the site's first exact (non-wildcard) sender.
+  const defaultFrom = site.senders.find((s) => !s.startsWith("*@")) ?? "";
   const fromEmail = (parsed.data.from?.email ?? defaultFrom).toLowerCase();
-  if (!showcaseMaySendAs(fromEmail)) {
+  if (!siteMaySendAs(site, fromEmail)) {
     res.status(403).json({ error: "sender_not_allowed", from: fromEmail || null });
     return;
   }
 
   try {
-    const results = await sendBatch(fromEmail, parsed.data.from?.name, parsed.data.messages);
+    const results = await sendBatch(
+      fromEmail,
+      parsed.data.from?.name,
+      parsed.data.messages,
+      `site:${site.name}`
+    );
     const sent = results.filter((r) => r.status === "sent").length;
     res.json({ from: fromEmail, sent, total: results.length, results });
   } catch (err) {
     // Only assertUnderCaps throws here; per-message SendGrid errors are in results.
     res.status(429).json({ error: err instanceof Error ? err.message : "send failed" });
   }
-});
+};
+app.post("/api/showcase/send", siteSend);
+app.post("/api/site/send", siteSend);
 
 // ── Hosted authorization/consent UI (Stytch IdentityProvider) ──────────────
 // Serve the built frontend from web/dist. API routes above take precedence;

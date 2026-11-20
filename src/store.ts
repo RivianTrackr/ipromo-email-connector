@@ -34,13 +34,13 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS auth_failures (
     id      INTEGER PRIMARY KEY AUTOINCREMENT,
     ts      TEXT NOT NULL,
-    reason  TEXT NOT NULL,      -- jwt_invalid | no_subject | email_unresolved | domain_not_allowed | showcase_token_invalid
+    reason  TEXT NOT NULL,      -- jwt_invalid | no_subject | email_unresolved | domain_not_allowed | site_token_invalid
     detail  TEXT
   );
 `);
 
 // Added after launch: who actually sent when `from` was a shared address.
-// NULL means sender_email was the user's own identity (or the showcase endpoint).
+// NULL means sender_email was the user's own identity (site sends record site:<name>).
 const sendLogCols = db.prepare(`PRAGMA table_info(send_log)`).all() as { name: string }[];
 if (!sendLogCols.some((c) => c.name === "sent_by")) {
   db.exec(`ALTER TABLE send_log ADD COLUMN sent_by TEXT`);

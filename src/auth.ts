@@ -1,7 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import * as stytch from "stytch";
 import { createRemoteJWKSet, jwtVerify } from "jose";
-import { config } from "./config.js";
+import { config, type SiteConfig } from "./config.js";
 import { recordConnection, recordAuthFailure } from "./store.js";
 
 // Stytch is the OAuth authorization server. This connector is only a RESOURCE
@@ -105,15 +105,19 @@ export async function authenticate(authHeader?: string): Promise<AuthedUser | nu
 const sha256 = (s: string) => createHash("sha256").update(s).digest();
 
 /**
- * Check the showcase site's static Bearer token (constant-time). Always false
- * when SHOWCASE_API_TOKEN is unset, so the endpoint stays closed by default.
+ * Which site does this Bearer token belong to? Constant-time against every
+ * configured site token; null when none match (or no site has a token), so the
+ * endpoint stays closed by default.
  */
-export function isValidShowcaseToken(authHeader?: string): boolean {
-  const expected = config.showcase.apiToken;
-  if (!expected || !authHeader?.startsWith("Bearer ")) return false;
-  const token = authHeader.slice("Bearer ".length).trim();
+export function siteForToken(authHeader?: string): SiteConfig | null {
+  if (!authHeader?.startsWith("Bearer ")) return null;
   // Hash both sides so timingSafeEqual gets equal-length inputs.
-  return timingSafeEqual(sha256(token), sha256(expected));
+  const got = sha256(authHeader.slice("Bearer ".length).trim());
+  let match: SiteConfig | null = null;
+  for (const site of config.sites) {
+    if (timingSafeEqual(got, sha256(site.apiToken)) && !match) match = site;
+  }
+  return match;
 }
 
 /** Defense in depth: never send as anything outside the approved domain(s). */
@@ -135,16 +139,16 @@ export function canSendAs(user: AuthedUser, fromEmail: string): boolean {
 }
 
 /**
- * May the showcase site send as `fromEmail`? Exact entries in SHOWCASE_SENDERS
- * match one address; a "*@domain" entry matches any address on that domain, so
- * the site can send from the rep's own mailbox. Always also bound by
+ * May `site` send as `fromEmail`? Exact entries in its senders list match one
+ * address; a "*@domain" entry matches any address on that domain, so the site
+ * can send from the rep's own mailbox. Always also bound by
  * ALLOWED_SENDER_DOMAINS.
  */
-export function showcaseMaySendAs(fromEmail: string): boolean {
+export function siteMaySendAs(site: SiteConfig, fromEmail: string): boolean {
   const from = fromEmail.toLowerCase();
   if (!from || !isAllowedSender(from)) return false;
   const domain = from.split("@")[1];
-  return config.showcase.senders.some((s) => s === from || s === `*@${domain}`);
+  return site.senders.some((s) => s === from || s === `*@${domain}`);
 }
 
 /** RFC 9728 Protected Resource Metadata — tells Claude where to authenticate. */

@@ -92,16 +92,40 @@ export const config = {
   // Unset = rep sends are not logged to HubSpot.
   hubspotToken: process.env.HUBSPOT_TOKEN ?? "",
 
-  // Showcase site (Cloudflare, no fixed egress IP) sends through us instead of
-  // calling SendGrid directly. Unset token = endpoint disabled.
-  showcase: {
-    apiToken: process.env.SHOWCASE_API_TOKEN ?? "",
-    // Addresses the showcase may send as; the first is the default `from`.
-    // An entry "*@ipromo.com" lets the site send as any address on that domain
-    // (so mail can come from the rep's own address); see showcaseMaySendAs().
-    senders: (process.env.SHOWCASE_SENDERS ?? "")
-      .split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean),
-  },
+  // Sites on Cloudflare/Higgsfield (no fixed egress IP) send through us instead
+  // of calling SendGrid directly, each with its own Bearer token and sender
+  // list. "showcase" comes from SHOWCASE_API_TOKEN / SHOWCASE_SENDERS. More
+  // sites: list names in EXTRA_SITES (e.g. "cyberweek") and set
+  // <NAME>_API_TOKEN / <NAME>_SENDERS for each. A site with no token is off.
+  sites: loadSites(),
 };
+
+export interface SiteConfig {
+  name: string;
+  apiToken: string;
+  // Addresses the site may send as; the first exact entry is the default `from`.
+  // "*@ipromo.com" lets it send as any address on that domain.
+  senders: string[];
+}
+
+function parseList(v: string | undefined): string[] {
+  return (v ?? "")
+    .split(",")
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+function loadSites(): SiteConfig[] {
+  const names = ["showcase", ...parseList(process.env.EXTRA_SITES)];
+  const seen = new Set<string>();
+  const sites: SiteConfig[] = [];
+  for (const name of names) {
+    if (!/^[a-z][a-z0-9_]*$/.test(name) || seen.has(name)) continue;
+    seen.add(name);
+    const key = name.toUpperCase();
+    const apiToken = (process.env[`${key}_API_TOKEN`] ?? "").trim();
+    if (!apiToken) continue;
+    sites.push({ name, apiToken, senders: parseList(process.env[`${key}_SENDERS`]) });
+  }
+  return sites;
+}
